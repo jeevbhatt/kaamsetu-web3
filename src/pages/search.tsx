@@ -28,17 +28,13 @@ import { useToast } from "../components/ToastContainer";
 import { Search, Filter, X, Database, AlertTriangle } from "lucide-react";
 import type { WorkerDisplay } from "@shram-sewa/shared";
 import { useWorkers, useDebouncedValue } from "../hooks";
-import { isSupabaseConfigured } from "../lib";
+import { getSupabaseClient, isSupabaseConfigured } from "../lib";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 const jobCategoryOptions = jobCategories.map((category, index) => ({
   ...category,
   id: index + 1,
 }));
-
-const jobCategoryIdBySlug = new Map(
-  jobCategoryOptions.map((category) => [category.slug, category.id]),
-);
 
 const PAGE_COLUMNS = 3;
 const PAGE_ROWS = 3;
@@ -119,6 +115,9 @@ export default function SearchPage() {
   const [selectedWorker, setSelectedWorker] = useState<WorkerDisplay | null>(
     null,
   );
+  const [pendingCategorySlug, setPendingCategorySlug] = useState<
+    string | undefined
+  >(undefined);
   const [isHireModalOpen, setIsHireModalOpen] = useState(false);
   const [isPendingTransition, startTransition] = useTransition();
 
@@ -141,7 +140,8 @@ export default function SearchPage() {
       districtId,
       jobCategoryId: jobCategory,
       isAvailable: true,
-    },
+      search: debouncedSearchQuery,
+    } as any,
     queryPage,
     queryPageSize,
     backendConfigured,
@@ -153,15 +153,12 @@ export default function SearchPage() {
     const districtFromUrl = parseNumberParam(params.get("districtId"));
     const jobCategoryIdFromUrl = parseNumberParam(params.get("jobCategoryId"));
     const jobCategorySlugFromUrl = params.get("jobCategory");
-    const jobCategoryIdFromSlug = jobCategorySlugFromUrl
-      ? jobCategoryIdBySlug.get(jobCategorySlugFromUrl)
-      : undefined;
 
     const hasUrlFilters =
       provinceFromUrl !== undefined ||
       districtFromUrl !== undefined ||
       jobCategoryIdFromUrl !== undefined ||
-      jobCategoryIdFromSlug !== undefined;
+      !!jobCategorySlugFromUrl;
 
     if (!hasUrlFilters) {
       return;
@@ -169,8 +166,56 @@ export default function SearchPage() {
 
     setProvinceId(provinceFromUrl);
     setDistrictId(districtFromUrl);
-    setJobCategory(jobCategoryIdFromUrl ?? jobCategoryIdFromSlug);
+    setJobCategory(jobCategoryIdFromUrl);
+    setPendingCategorySlug(
+      jobCategoryIdFromUrl ? undefined : (jobCategorySlugFromUrl ?? undefined),
+    );
   }, [setDistrictId, setJobCategory, setProvinceId]);
+
+  useEffect(() => {
+    if (!pendingCategorySlug) {
+      return;
+    }
+
+    const staticCategory = jobCategories.find(
+      (category) => category.slug === pendingCategorySlug,
+    );
+
+    // Ensure slug links still narrow results even if category ids differ by environment.
+    if (staticCategory) {
+      setSearchQuery((previousQuery) =>
+        previousQuery.trim() ? previousQuery : staticCategory.nameEn,
+      );
+    }
+
+    if (!backendConfigured) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    (async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = (await supabase
+          .from("job_categories")
+          .select("id")
+          .eq("is_active", true)
+          .eq("slug", pendingCategorySlug)
+          .maybeSingle()) as { data: { id: number } | null; error: unknown };
+
+        if (!isCancelled && !error && data?.id) {
+          setJobCategory(data.id);
+        }
+      } catch {
+        // Keep text search fallback if category lookup fails.
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [backendConfigured, pendingCategorySlug, setJobCategory]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -210,52 +255,7 @@ export default function SearchPage() {
     [workersQuery.data],
   );
 
-  const filteredWorkers = useMemo(() => {
-    if (!deferredSearchQuery.trim()) {
-      return workers;
-    }
-
-    const q = deferredSearchQuery.trim().toLowerCase();
-    const qDigits = q.replace(/\D/g, "");
-
-    return workers.filter((worker) => {
-      const fullName = worker.user.fullName?.toLowerCase() ?? "";
-      const fullNameNp = worker.user.fullNameNp?.toLowerCase() ?? "";
-      const categoryName = worker.jobCategory.nameEn?.toLowerCase() ?? "";
-      const categoryNameNp = worker.jobCategory.nameNp?.toLowerCase() ?? "";
-      const provinceName = worker.province.nameEn?.toLowerCase() ?? "";
-      const provinceNameNp = worker.province.nameNp?.toLowerCase() ?? "";
-      const districtName = worker.district.nameEn?.toLowerCase() ?? "";
-      const districtNameNp = worker.district.nameNp?.toLowerCase() ?? "";
-      const localUnitName = worker.localUnit.nameEn?.toLowerCase() ?? "";
-      const localUnitNameNp = worker.localUnit.nameNp?.toLowerCase() ?? "";
-      const localUnitType = worker.localUnit.unitType?.toLowerCase() ?? "";
-      const localUnitTypeReadable = localUnitType.replace(/_/g, " ");
-      const wardNo = String(worker.wardNo);
-      const wardMatches =
-        wardNo.includes(q) ||
-        `ward ${wardNo}`.includes(q) ||
-        `ward no ${wardNo}`.includes(q) ||
-        `वडा ${wardNo}`.includes(q) ||
-        (qDigits.length > 0 && wardNo.includes(qDigits));
-
-      return (
-        fullName.includes(q) ||
-        fullNameNp.includes(q) ||
-        categoryName.includes(q) ||
-        categoryNameNp.includes(q) ||
-        provinceName.includes(q) ||
-        provinceNameNp.includes(q) ||
-        districtName.includes(q) ||
-        districtNameNp.includes(q) ||
-        localUnitName.includes(q) ||
-        localUnitNameNp.includes(q) ||
-        localUnitType.includes(q) ||
-        localUnitTypeReadable.includes(q) ||
-        wardMatches
-      );
-    });
-  }, [deferredSearchQuery, workers]);
+  const filteredWorkers = workers;
 
   const isLoading =
     backendConfigured && (workersQuery.isLoading || workersQuery.isFetching);

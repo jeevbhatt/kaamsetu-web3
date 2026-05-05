@@ -74,11 +74,11 @@ export default function LoginPage() {
       return;
     }
 
-    if (!/^9[78]\d{8}$/.test(phone)) {
+    if (!/^9[678]\d{8}$/.test(phone)) {
       setError(
         isNepali
-          ? "मान्य नम्बर प्रविष्ट गर्नुहोस्"
-          : "Enter valid Nepal number",
+          ? "मान्य नम्बर प्रविष्ट गर्नुहोस् (९८, ९७, ९६ बाट सुरु हुने)"
+          : "Enter valid Nepal number (starting with 98, 97, 96)",
       );
       return;
     }
@@ -88,11 +88,18 @@ export default function LoginPage() {
     setIsLoading(false);
 
     if (!otpSent) {
+      const rawError = useAuthStore.getState().authError ?? "";
+      const isProviderDisabled =
+        rawError.toLowerCase().includes("phone_provider_disabled") ||
+        rawError.toLowerCase().includes("unsupported phone provider");
       setError(
-        authError ??
-          (isNepali
-            ? "OTP पठाउन सकिएन। पछि पुन: प्रयास गर्नुहोस्।"
-            : "Failed to send OTP. Please try again."),
+        isProviderDisabled
+          ? (isNepali
+              ? "SMS सेवा अहिले उपलब्ध छैन। कृपया इमेल लगइन प्रयोग गर्नुहोस्।"
+              : "SMS login is not available right now. Please use email login.")
+          : (rawError || (isNepali
+              ? "OTP पठाउन सकिएन। पछि पुनः प्रयास गर्नुहोस्।"
+              : "Failed to send OTP. Please try again.")),
       );
       return;
     }
@@ -153,7 +160,7 @@ export default function LoginPage() {
       </div>
 
       <div className="text-center mb-8">
-        <div className="text-4xl mb-2">🏔️</div>
+        <img src="/logo.png" alt="Shram Sewa" className="h-16 w-auto mx-auto mb-4" />
         <h1 className="text-2xl font-bold text-mountain-900">
           {isNepali ? "श्रम सेवा" : "Shram Sewa"}
         </h1>

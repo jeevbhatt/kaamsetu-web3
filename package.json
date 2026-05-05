@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "lint": "echo \"No lint configured for @shram-sewa/web\"",
     "typecheck": "tsc --noEmit",
+    "auth:check": "node scripts/verify-auth-setup.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

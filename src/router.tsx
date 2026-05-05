@@ -34,6 +34,7 @@ const PrivacyPage = lazy(() => import("./pages/privacy"));
 const TermsPage = lazy(() => import("./pages/terms"));
 const GuidelinesPage = lazy(() => import("./pages/guidelines"));
 const ContactPage = lazy(() => import("./pages/contact"));
+const OnboardingPage = lazy(() => import("./pages/onboarding"));
 
 // Page transition variants (from AGENTS.md section 9)
 const pageVariants: Variants = {
@@ -207,16 +208,43 @@ const rootRoute = createRootRoute({
   component: RootLayout,
 });
 
+/**
+ * Await auth initialization and redirect unauthenticated users to /login.
+ * Fix 6: Read state once after await to avoid race where isLoading=true
+ * causes a stale isAuthenticated=false read.
+ */
 async function requireAuth() {
   const authState = useAuthStore.getState();
 
+  // Wait for initialization to complete before reading isAuthenticated
   if (authState.isLoading) {
     await authState.initialize();
   }
 
+  // Read state once after initialization is guaranteed complete
   const { isAuthenticated } = useAuthStore.getState();
   if (!isAuthenticated) {
     throw redirect({ to: "/login" });
+  }
+}
+
+const onboardingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/onboarding",
+  beforeLoad: requireAuth,
+  component: () => (
+    <Suspense fallback={<PageLoader />}>
+      {/* Dynamic import so it splits out */}
+      <OnboardingPage />
+    </Suspense>
+  ),
+});
+
+async function requireProfile() {
+  await requireAuth();
+  const { isProfileComplete } = useAuthStore.getState();
+  if (!isProfileComplete()) {
+    throw redirect({ to: "/onboarding" });
   }
 }
 
@@ -254,7 +282,7 @@ const workerRoute = createRoute({
 const hireRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/hire/$workerId",
-  beforeLoad: requireAuth,
+  beforeLoad: requireProfile,
   component: () => (
     <Suspense fallback={<PageLoader />}>
       <HirePage />
@@ -265,7 +293,7 @@ const hireRoute = createRoute({
 const profileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile",
-  beforeLoad: requireAuth,
+  beforeLoad: requireProfile,
   component: () => (
     <Suspense fallback={<PageLoader />}>
       <ProfilePage />
@@ -276,6 +304,17 @@ const profileRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
+  // Fix 4: redirect already-authenticated users away from the login page
+  beforeLoad: async () => {
+    const authState = useAuthStore.getState();
+    if (authState.isLoading) {
+      await authState.initialize();
+    }
+    const { isAuthenticated } = useAuthStore.getState();
+    if (isAuthenticated) {
+      throw redirect({ to: "/profile" });
+    }
+  },
   component: () => (
     <Suspense fallback={<PageLoader />}>
       <LoginPage />
@@ -350,6 +389,7 @@ const routeTree = rootRoute.addChildren([
   workerRoute,
   hireRoute,
   profileRoute,
+  onboardingRoute,
   loginRoute,
   howItWorksRoute,
   faqRoute,

@@ -135,7 +135,7 @@ export default function ProfileSettings() {
             <input
               className="input"
               type="text"
-              value={phone || user?.email || "Unknown"}
+              value={phone || user?.phone || "Unknown"}
               disabled
               style={{
                 background: "var(--terrain-100)",

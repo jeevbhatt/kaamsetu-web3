@@ -27,11 +27,10 @@ export function Header() {
             className="flex items-center gap-3 group"
           >
             <motion.div
-              className="w-11 h-11 rounded-xl bg-gradient-to-br from-crimson-700 via-crimson-600 to-gold-500 flex items-center justify-center text-white font-bold text-base shadow-lg"
-              whileHover={{ y: -1, scale: 1.03 }}
+              whileHover={{ y: -1, scale: 1.05 }}
               transition={{ duration: 0.2 }}
             >
-              श्रम
+              <img src="/logo.png" alt="Shram Sewa" className="h-10 w-auto" />
             </motion.div>
             <div>
               <h1 className="text-xl font-display font-bold text-mountain-900 group-hover:text-crimson-700 transition-colors">

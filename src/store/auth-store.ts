@@ -152,9 +152,10 @@ interface AuthState {
   login: (phone: string, otp?: string) => Promise<boolean>;
   loginWithEmail: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  isProfileComplete: () => boolean;
 }
 
-export const useAuthStore = create<AuthState>()((set) => ({
+export const useAuthStore = create<AuthState>()((set, get) => ({
   // Initial state
   user: null,
   session: null,
@@ -163,6 +164,13 @@ export const useAuthStore = create<AuthState>()((set) => ({
   authError: null,
 
   // Actions
+  isProfileComplete: () => {
+    const { user } = get();
+    if (!user) return false;
+    // Check if the user has basic details set (like full name)
+    // If it's a worker, they should also have a job category, but for now we just check fullName as the minimum threshold for both roles.
+    return Boolean(user.fullName && user.fullName.trim() !== "");
+  },
   setSession: (session) =>
     set({
       session,

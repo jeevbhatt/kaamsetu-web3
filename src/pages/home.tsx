@@ -346,7 +346,7 @@ export default function HomePage() {
               <Link
                 to="/search"
                 preload="intent"
-                search={{ jobCategoryId: index + 1 }}
+                search={{ jobCategory: job.slug }}
                 className="group"
               >
                 <Card className="h-full transition-[transform,box-shadow,border-color] duration-200 ease-[cubic-bezier(0.2,0,0,1)] hover:shadow-md hover:border-crimson-200">

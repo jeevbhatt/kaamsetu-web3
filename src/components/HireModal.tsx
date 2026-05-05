@@ -8,7 +8,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Calendar, FileText, DollarSign, Clock } from "lucide-react";
 import { Button, Card, CardContent, Badge } from "./ui";
-import { useUIStore } from "../store";
+import { useAuthStore, useUIStore } from "../store";
 import {
   createIpFingerprint,
   hasHireIpLock,
@@ -38,9 +38,12 @@ interface HireModalProps {
 
 export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
   const { locale } = useUIStore();
+  const { user: currentUser } = useAuthStore();
   const createHireMutation = useCreateHireMutation();
   const toast = useToast();
   const isNepali = locale === "ne";
+  
+  const isSelfHire = currentUser?.id === worker.id;
 
   const defaultRate = worker.dailyRate ?? 0;
   const today = new Date().toISOString().split("T")[0] ?? "";
@@ -54,6 +57,14 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
   const handleConfirm = async () => {
     setError(null);
     setErrorStatus(null);
+
+    if (isSelfHire) {
+      setError(
+        isNepali ? "तपाईंले आफैलाई भाडामा लिन सक्नुहुन्न।" : "You cannot hire yourself.",
+      );
+      setErrorStatus(403);
+      return;
+    }
 
     if (!workDescription.trim()) {
       setError(
@@ -337,7 +348,7 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
                       <Button
                         onClick={handleConfirm}
                         className="w-full"
-                        disabled={createHireMutation.isPending}
+                        disabled={createHireMutation.isPending || isSelfHire}
                       >
                         {createHireMutation.isPending
                           ? isNepali

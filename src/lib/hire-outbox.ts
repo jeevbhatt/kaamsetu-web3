@@ -123,7 +123,19 @@ function writeOutbox(items: HireOutboxItem[]) {
     return;
   }
 
-  window.localStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
+  try {
+    window.localStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
+  } catch (err) {
+    console.error("[Outbox] Failed to write to localStorage:", err);
+    // If full, try to drop the oldest item and retry once
+    if (items.length > 1) {
+      try {
+        window.localStorage.setItem(OUTBOX_KEY, JSON.stringify(items.slice(0, -1)));
+      } catch (inner) {
+        // Give up
+      }
+    }
+  }
 }
 
 function updateOutboxItem(

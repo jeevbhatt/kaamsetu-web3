@@ -127,8 +127,21 @@ export default function WorkerPage() {
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row gap-6">
             <div className="flex flex-col items-center">
-              <div className="w-24 h-24 rounded-full bg-terrain-200 flex items-center justify-center text-4xl">
-                {worker.jobCategory.icon || "👤"}
+              <div className="w-24 h-24 rounded-full bg-terrain-200 flex items-center justify-center text-4xl overflow-hidden shadow-sm">
+                {worker.user?.avatarUrl ? (
+                  <img
+                    src={worker.user.avatarUrl}
+                    alt={workerName}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
+                    }}
+                  />
+                ) : null}
+                <span className={worker.user?.avatarUrl ? "hidden" : ""}>
+                  {worker.jobCategory.icon || "👤"}
+                </span>
               </div>
               {worker.isAvailable && (
                 <Badge variant="available" className="mt-2">

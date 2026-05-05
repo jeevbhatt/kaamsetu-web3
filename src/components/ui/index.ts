@@ -19,3 +19,4 @@ export {
   PaginationNext,
   PaginationPrevious,
 } from "./pagination";
+export { Progress } from "./progress";

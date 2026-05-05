@@ -96,8 +96,22 @@ export default function ProfilePage() {
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-crimson-100 flex items-center justify-center">
-              <User className="w-8 h-8 text-crimson-700" />
+            <div className="w-16 h-16 rounded-full bg-crimson-100 flex items-center justify-center overflow-hidden shadow-sm border-2 border-white">
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user?.fullName || "User"}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                    const fallback = (e.target as HTMLImageElement).parentElement?.querySelector(".avatar-fallback");
+                    if (fallback) fallback.classList.remove("hidden");
+                  }}
+                />
+              ) : null}
+              <span className={`avatar-fallback ${user?.avatarUrl ? "hidden" : ""}`}>
+                <User className="w-8 h-8 text-crimson-700" />
+              </span>
             </div>
             <div className="flex-1">
               <h1 className="text-xl font-bold text-mountain-900">
@@ -116,32 +130,36 @@ export default function ProfilePage() {
       </Card>
 
       <div className="grid grid-cols-2 gap-4">
-        <Card className="cursor-pointer hover:border-crimson-200">
-          <CardContent className="p-4 flex items-center gap-3">
-            <Briefcase className="w-5 h-5 text-blue-600" />
-            <div>
-              <div className="font-medium">
-                {isNepali ? "भाडाहरू" : "Hires"}
+        <Link to="/profile" className="block" aria-label="View Hires">
+          <Card className="cursor-pointer hover:border-crimson-200 h-full">
+            <CardContent className="p-4 flex items-center gap-3">
+              <Briefcase className="w-5 h-5 text-blue-600" />
+              <div>
+                <div className="font-medium">
+                  {isNepali ? "भाडाहरू" : "Hires"}
+                </div>
+                <div className="text-sm text-terrain-500">
+                  {activeHires} {isNepali ? "सक्रिय" : "active"}
+                </div>
               </div>
-              <div className="text-sm text-terrain-500">
-                {activeHires} {isNepali ? "सक्रिय" : "active"}
+            </CardContent>
+          </Card>
+        </Link>
+        <Link to="/profile" className="block" aria-label="View Notifications">
+          <Card className="cursor-pointer hover:border-crimson-200 h-full">
+            <CardContent className="p-4 flex items-center gap-3">
+              <Bell className="w-5 h-5 text-amber-600" />
+              <div>
+                <div className="font-medium">
+                  {isNepali ? "सूचना" : "Notifications"}
+                </div>
+                <div className="text-sm text-terrain-500">
+                  {unreadNotifications} {isNepali ? "नयाँ" : "new"}
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:border-crimson-200">
-          <CardContent className="p-4 flex items-center gap-3">
-            <Bell className="w-5 h-5 text-amber-600" />
-            <div>
-              <div className="font-medium">
-                {isNepali ? "सूचना" : "Notifications"}
-              </div>
-              <div className="text-sm text-terrain-500">
-                {unreadNotifications} {isNepali ? "नयाँ" : "new"}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <Card>
@@ -166,10 +184,14 @@ export default function ProfilePage() {
                     <Clock className="w-5 h-5 text-amber-600" />
                   )}
                   <div className="flex-1">
-                    <div className="font-medium text-sm">
+                    <Link
+                      to="/worker/$workerId"
+                      params={{ workerId: hire.workerId }}
+                      className="font-medium text-sm text-mountain-900 hover:text-crimson-700 transition-colors"
+                    >
                       {isNepali ? "कामदार ID" : "Worker ID"}:{" "}
                       {hire.workerId.slice(0, 8)}
-                    </div>
+                    </Link>
                     <div className="text-sm text-terrain-500">
                       {formatDate(hire.hiredAt)}
                     </div>
