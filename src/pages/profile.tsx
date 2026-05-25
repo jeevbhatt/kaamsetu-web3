@@ -6,6 +6,11 @@ import {
   useNotifications,
   useNotificationsSubscription,
   useUpdateHireStatusMutation,
+  useWorker,
+  useMarkNotificationAsReadMutation,
+  useMarkAllNotificationsAsReadMutation,
+  useMyWorkerProfile,
+  useIncomingHires,
 } from "../hooks";
 import {
   User,
@@ -16,6 +21,7 @@ import {
   CheckCircle,
   Clock,
 } from "lucide-react";
+import type { HireRecord } from "@shram-sewa/shared";
 
 export default function ProfilePage() {
   const { locale } = useUIStore();
@@ -24,6 +30,18 @@ export default function ProfilePage() {
   const hiresQuery = useMyHires(isAuthenticated);
   const notificationsQuery = useNotifications(isAuthenticated);
   const updateHireStatus = useUpdateHireStatusMutation();
+  const markRead = useMarkNotificationAsReadMutation();
+  const markAllRead = useMarkAllNotificationsAsReadMutation();
+
+  // Worker-side: only fetched when the role is "worker". When the user is
+  // a hirer or hasn't completed worker onboarding, the profile query
+  // returns null and useIncomingHires no-ops because the id is undefined.
+  const isWorker = user?.role === "worker";
+  const myWorkerProfile = useMyWorkerProfile(isAuthenticated && isWorker);
+  const incomingHires = useIncomingHires(
+    myWorkerProfile.data?.id,
+    isAuthenticated && isWorker,
+  );
 
   useNotificationsSubscription(isAuthenticated);
 
@@ -73,6 +91,17 @@ export default function ProfilePage() {
       hireId,
       status: "cancelled",
     });
+  };
+
+  // Worker-side actions on incoming hire requests. The DB constraint
+  // (idx_hire_ip_worker partial unique) prevents duplicate hires, but
+  // accept/reject is what actually drives availability — `hires.ts`
+  // syncWorkerAvailability flips is_available based on accepted count.
+  const handleAccept = async (hireId: string) => {
+    await updateHireStatus.mutateAsync({ hireId, status: "accepted" });
+  };
+  const handleReject = async (hireId: string) => {
+    await updateHireStatus.mutateAsync({ hireId, status: "rejected" });
   };
 
   if (!isAuthenticated) {
@@ -129,8 +158,15 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Quick-stats cards. The hires + notifications cards anchor-scroll
+          to their respective lists below (real interaction, not the old
+          self-link stubs). */}
       <div className="grid grid-cols-2 gap-4">
-        <Link to="/profile" className="block" aria-label="View Hires">
+        <a
+          href="#hires-list"
+          className="block"
+          aria-label={isNepali ? "भाडाहरू" : "View Hires"}
+        >
           <Card className="cursor-pointer hover:border-crimson-200 h-full">
             <CardContent className="p-4 flex items-center gap-3">
               <Briefcase className="w-5 h-5 text-blue-600" />
@@ -144,8 +180,12 @@ export default function ProfilePage() {
               </div>
             </CardContent>
           </Card>
-        </Link>
-        <Link to="/profile" className="block" aria-label="View Notifications">
+        </a>
+        <a
+          href="#notifications-list"
+          className="block"
+          aria-label={isNepali ? "सूचना" : "View Notifications"}
+        >
           <Card className="cursor-pointer hover:border-crimson-200 h-full">
             <CardContent className="p-4 flex items-center gap-3">
               <Bell className="w-5 h-5 text-amber-600" />
@@ -159,13 +199,182 @@ export default function ProfilePage() {
               </div>
             </CardContent>
           </Card>
-        </Link>
+        </a>
       </div>
 
-      <Card>
+      {/* Notifications list — real DOM rendering with mark-as-read.
+          Replaces the previous count-only display. */}
+      <Card id="notifications-list">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">
+              {isNepali ? "सूचनाहरू" : "Notifications"}
+            </h2>
+            {unreadNotifications > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void markAllRead.mutateAsync()}
+                disabled={markAllRead.isPending}
+              >
+                {isNepali ? "सबै पढिएको चिन्ह" : "Mark all read"}
+              </Button>
+            )}
+          </div>
+          {notificationsQuery.isLoading ? (
+            <p className="text-sm text-terrain-500">
+              {isNepali ? "लोड हुँदै..." : "Loading..."}
+            </p>
+          ) : (notificationsQuery.data ?? []).length > 0 ? (
+            <ul className="space-y-2">
+              {(notificationsQuery.data ?? []).slice(0, 20).map((n) => {
+                const title = isNepali && n.titleNp ? n.titleNp : n.title;
+                const body = isNepali && n.bodyNp ? n.bodyNp : n.body;
+                return (
+                  <li
+                    key={n.id}
+                    onClick={() => {
+                      if (!n.isRead) {
+                        void markRead.mutateAsync(n.id);
+                      }
+                    }}
+                    className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                      n.isRead
+                        ? "border-terrain-200 bg-white"
+                        : "border-crimson-200 bg-crimson-50/40 hover:bg-crimson-50"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <Bell
+                        className={`w-4 h-4 mt-0.5 ${
+                          n.isRead ? "text-terrain-400" : "text-crimson-700"
+                        }`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-mountain-900">
+                          {title}
+                        </div>
+                        <div className="text-xs text-terrain-500 truncate">
+                          {body}
+                        </div>
+                        <div className="text-[11px] text-terrain-400 mt-0.5">
+                          {formatDate(n.createdAt)}
+                        </div>
+                      </div>
+                      {!n.isRead && (
+                        <span className="w-2 h-2 rounded-full bg-crimson-700 mt-1.5" />
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-terrain-500">
+              {isNepali
+                ? "कुनै सूचना उपलब्ध छैन"
+                : "No notifications yet"}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Worker-side: incoming hire requests. Only renders when the
+          logged-in user is a worker. Accept/Reject mutations reuse the
+          same useUpdateHireStatusMutation that hirers use to complete/
+          cancel, so all status transitions hit the same audited path. */}
+      {isWorker && (
+        <Card id="incoming-hires-list">
+          <CardContent className="p-6">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-crimson-700" />
+              {isNepali ? "आउँदै गरेका अनुरोध" : "Incoming Hire Requests"}
+            </h2>
+            {incomingHires.isLoading ? (
+              <p className="text-sm text-terrain-500">
+                {isNepali ? "लोड हुँदै..." : "Loading..."}
+              </p>
+            ) : (incomingHires.data ?? []).length > 0 ? (
+              (incomingHires.data ?? []).map((hire) => (
+                <div
+                  key={hire.id}
+                  className="rounded-lg bg-terrain-50 mb-3 p-3 space-y-3"
+                >
+                  <div className="flex items-center gap-4">
+                    {hire.status === "completed" ? (
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <Clock className="w-5 h-5 text-amber-600" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm text-mountain-900">
+                        {hire.workDescription?.slice(0, 80) ||
+                          (isNepali ? "(विवरण छैन)" : "(no description)")}
+                      </div>
+                      <div className="text-xs text-terrain-500">
+                        {formatDate(hire.hiredAt)}
+                        {hire.workDate
+                          ? ` · ${isNepali ? "काम मिति" : "work date"} ${formatDate(hire.workDate)}`
+                          : ""}
+                      </div>
+                    </div>
+                    <Badge variant={statusVariant(hire.status)}>
+                      {statusLabel(hire.status)}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium">
+                      रु {(hire.agreedRateNpr ?? 0).toLocaleString("en-IN")}
+                      {hire.workDurationDays > 1
+                        ? ` × ${hire.workDurationDays} ${isNepali ? "दिन" : "days"}`
+                        : ""}
+                    </div>
+                    {hire.status === "pending" && (
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => void handleAccept(hire.id)}
+                          disabled={updateHireStatus.isPending}
+                        >
+                          {isNepali ? "स्वीकार" : "Accept"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleReject(hire.id)}
+                          disabled={updateHireStatus.isPending}
+                        >
+                          {isNepali ? "अस्वीकार" : "Reject"}
+                        </Button>
+                      </div>
+                    )}
+                    {hire.status === "accepted" && (
+                      <Button
+                        size="sm"
+                        onClick={() => void handleMarkCompleted(hire.id)}
+                        disabled={updateHireStatus.isPending}
+                      >
+                        {isNepali ? "सम्पन्न" : "Mark Completed"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-terrain-500">
+                {isNepali
+                  ? "अहिलेसम्म कुनै अनुरोध प्राप्त भएको छैन।"
+                  : "No incoming hire requests yet."}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card id="hires-list">
         <CardContent className="p-6">
           <h2 className="text-lg font-semibold mb-4">
-            {isNepali ? "भर्खरको" : "Recent"}
+            {isNepali ? "भर्खरको भाडा" : "Recent Hires"}
           </h2>
           {hiresQuery.isLoading ? (
             <p className="text-sm text-terrain-500">
@@ -173,61 +382,17 @@ export default function ProfilePage() {
             </p>
           ) : hireHistory.length > 0 ? (
             hireHistory.map((hire) => (
-              <div
+              <HireHistoryRow
                 key={hire.id}
-                className="rounded-lg bg-terrain-50 mb-3 p-3 space-y-3"
-              >
-                <div className="flex items-center gap-4">
-                  {hire.status === "completed" ? (
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                  ) : (
-                    <Clock className="w-5 h-5 text-amber-600" />
-                  )}
-                  <div className="flex-1">
-                    <Link
-                      to="/worker/$workerId"
-                      params={{ workerId: hire.workerId }}
-                      className="font-medium text-sm text-mountain-900 hover:text-crimson-700 transition-colors"
-                    >
-                      {isNepali ? "कामदार ID" : "Worker ID"}:{" "}
-                      {hire.workerId.slice(0, 8)}
-                    </Link>
-                    <div className="text-sm text-terrain-500">
-                      {formatDate(hire.hiredAt)}
-                    </div>
-                  </div>
-                  <Badge variant={statusVariant(hire.status)}>
-                    {statusLabel(hire.status)}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">
-                    रु {(hire.agreedRateNpr ?? 0).toLocaleString("en-IN")}
-                  </div>
-                  {(hire.status === "pending" ||
-                    hire.status === "accepted") && (
-                    <div className="flex gap-2">
-                      {hire.status === "accepted" && (
-                        <Button
-                          size="sm"
-                          onClick={() => void handleMarkCompleted(hire.id)}
-                          disabled={updateHireStatus.isPending}
-                        >
-                          {isNepali ? "सम्पन्न" : "Complete"}
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void handleCancel(hire.id)}
-                        disabled={updateHireStatus.isPending}
-                      >
-                        {isNepali ? "रद्द" : "Cancel"}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
+                hire={hire}
+                isNepali={isNepali}
+                formatDate={formatDate}
+                statusLabel={statusLabel}
+                statusVariant={statusVariant}
+                onComplete={handleMarkCompleted}
+                onCancel={handleCancel}
+                isPending={updateHireStatus.isPending}
+              />
             ))
           ) : (
             <p className="text-sm text-terrain-500">
@@ -249,6 +414,102 @@ export default function ProfilePage() {
         <LogOut className="w-4 h-4 mr-2" />
         {isNepali ? "लगआउट" : "Logout"}
       </Button>
+    </div>
+  );
+}
+
+// ─── HireHistoryRow ────────────────────────────────────────────────────
+// Extracted into its own component so each row can call useWorker(workerId)
+// without violating the rules of hooks (no hook calls in loops). Renders
+// the worker's real name (with Nepali fallback) instead of "Worker ID: 12345678".
+//
+// While the worker query is in flight we show the truncated UUID as a
+// placeholder so the row layout doesn't reflow when the name resolves.
+function HireHistoryRow({
+  hire,
+  isNepali,
+  formatDate,
+  statusLabel,
+  statusVariant,
+  onComplete,
+  onCancel,
+  isPending,
+}: {
+  hire: HireRecord;
+  isNepali: boolean;
+  formatDate: (date: Date) => string;
+  statusLabel: (status: string) => string;
+  statusVariant: (
+    status: string,
+  ) => "success" | "warning" | "destructive" | "secondary";
+  onComplete: (hireId: string) => Promise<void>;
+  onCancel: (hireId: string) => Promise<void>;
+  isPending: boolean;
+}) {
+  const workerQuery = useWorker(hire.workerId);
+  const worker = workerQuery.data;
+
+  const displayName = (() => {
+    if (worker) {
+      if (isNepali && worker.user?.fullNameNp) return worker.user.fullNameNp;
+      if (worker.user?.fullName) return worker.user.fullName;
+      if (isNepali && worker.fullNameNp) return worker.fullNameNp;
+      if (worker.fullName) return worker.fullName;
+    }
+    // Fallback while loading or on missing-data
+    return `${isNepali ? "कामदार" : "Worker"} ${hire.workerId.slice(0, 8)}`;
+  })();
+
+  return (
+    <div className="rounded-lg bg-terrain-50 mb-3 p-3 space-y-3">
+      <div className="flex items-center gap-4">
+        {hire.status === "completed" ? (
+          <CheckCircle className="w-5 h-5 text-green-600" />
+        ) : (
+          <Clock className="w-5 h-5 text-amber-600" />
+        )}
+        <div className="flex-1 min-w-0">
+          <Link
+            to="/worker/$workerId"
+            params={{ workerId: hire.workerId }}
+            className="font-medium text-sm text-mountain-900 hover:text-crimson-700 transition-colors truncate block"
+          >
+            {displayName}
+          </Link>
+          <div className="text-sm text-terrain-500">
+            {formatDate(hire.hiredAt)}
+          </div>
+        </div>
+        <Badge variant={statusVariant(hire.status)}>
+          {statusLabel(hire.status)}
+        </Badge>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="font-medium">
+          रु {(hire.agreedRateNpr ?? 0).toLocaleString("en-IN")}
+        </div>
+        {(hire.status === "pending" || hire.status === "accepted") && (
+          <div className="flex gap-2">
+            {hire.status === "accepted" && (
+              <Button
+                size="sm"
+                onClick={() => void onComplete(hire.id)}
+                disabled={isPending}
+              >
+                {isNepali ? "सम्पन्न" : "Complete"}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void onCancel(hire.id)}
+              disabled={isPending}
+            >
+              {isNepali ? "रद्द" : "Cancel"}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

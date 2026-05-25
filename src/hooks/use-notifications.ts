@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Notification } from "@shram-sewa/shared";
+import { notificationsApi } from "@shram-sewa/shared/api";
 import { queryKeys } from "../lib/query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib";
 import { useAuthStore } from "../store/auth-store";
@@ -104,4 +105,70 @@ export function useNotificationsSubscription(enabled = true) {
       void supabase.removeChannel(channel);
     };
   }, [enabled, userId, queryClient]);
+}
+
+// Mark a single notification as read. Optimistic so the badge count
+// drops immediately; on failure React Query refetches the canonical
+// list and the badge restores.
+export function useMarkNotificationAsReadMutation() {
+  const queryClient = useQueryClient();
+  const userId = useAuthStore((state) => state.user?.id);
+  const queryKey = queryKeys.notifications.all(userId ?? "anonymous");
+
+  return useMutation({
+    mutationFn: (notificationId: string) =>
+      notificationsApi.markAsRead(notificationId),
+    onMutate: async (notificationId) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<Notification[]>(queryKey);
+      if (previous) {
+        queryClient.setQueryData<Notification[]>(
+          queryKey,
+          previous.map((n) =>
+            n.id === notificationId ? { ...n, isRead: true } : n,
+          ),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKey, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey });
+    },
+  });
+}
+
+// Mark every unread notification for the current user as read in a
+// single round trip. Useful as a "Mark all read" affordance.
+export function useMarkAllNotificationsAsReadMutation() {
+  const queryClient = useQueryClient();
+  const userId = useAuthStore((state) => state.user?.id);
+  const queryKey = queryKeys.notifications.all(userId ?? "anonymous");
+
+  return useMutation({
+    mutationFn: () => notificationsApi.markAllAsRead(),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<Notification[]>(queryKey);
+      if (previous) {
+        queryClient.setQueryData<Notification[]>(
+          queryKey,
+          previous.map((n) => ({ ...n, isRead: true })),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKey, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey });
+    },
+  });
 }

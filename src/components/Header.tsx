@@ -9,6 +9,7 @@ import { Menu, Globe, LogIn, User } from "lucide-react";
 import { useUIStore } from "../store";
 import { useAuthStore } from "../store/auth-store";
 import { motion } from "framer-motion";
+import { NotificationBell } from "./NotificationBell";
 
 export function Header() {
   const { locale, toggleLocale, toggleSidebar } = useUIStore();
@@ -69,6 +70,9 @@ export function Header() {
               <Globe className="w-4 h-4" />
               <span>{isNepali ? "EN" : "नेपाली"}</span>
             </Button>
+
+            {/* Notifications (only renders + subscribes when authenticated) */}
+            <NotificationBell />
 
             {/* Auth */}
             {isAuthenticated ? (

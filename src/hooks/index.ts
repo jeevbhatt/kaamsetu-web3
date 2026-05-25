@@ -9,6 +9,8 @@ export { useDebouncedValue } from "./use-debounced-value";
 export {
   useHireRecord,
   useMyHires,
+  useMyWorkerProfile,
+  useIncomingHires,
   useCreateHireMutation,
   useUpdateHireStatusMutation,
   useSubmitHireReviewMutation,
@@ -17,4 +19,6 @@ export { useWorkerProfileUpdateMutation } from "./use-worker-profile";
 export {
   useNotifications,
   useNotificationsSubscription,
+  useMarkNotificationAsReadMutation,
+  useMarkAllNotificationsAsReadMutation,
 } from "./use-notifications";

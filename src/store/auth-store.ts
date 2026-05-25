@@ -79,16 +79,68 @@ function mapSupabaseSession(raw: unknown): AuthSession | null {
 let authListenerBound = false;
 
 // Auth helper functions using authApi
+//
+// When Supabase rejects an OTP request, the underlying GoTrue/Supabase error
+// object carries a richer payload than `error.message` alone — `code`,
+// `status`, and sometimes a Twilio-side hint. We capture all of it so the
+// failure mode (e.g. "phone_provider_disabled", "sms_send_failed", trial
+// account / geo-permission errors, rate-limit hits) is visible in the
+// console without a network-tab dive.
 async function requestPhoneOtp(params: { phone: string; locale: string }) {
   try {
     await authApi.requestOtp(`+977${params.phone}`);
     return { success: true };
   } catch (error) {
+    const detail = describeAuthError(error);
+    console.error("[auth] OTP request failed", detail);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: detail.userMessage,
     };
   }
+}
+
+function describeAuthError(error: unknown): {
+  userMessage: string;
+  code?: string;
+  status?: number;
+  raw?: unknown;
+} {
+  if (!error) {
+    return { userMessage: "Unknown error" };
+  }
+
+  // Supabase AuthError shape: { message, status, code, name }
+  if (typeof error === "object") {
+    const e = error as {
+      message?: unknown;
+      status?: unknown;
+      code?: unknown;
+      name?: unknown;
+    };
+    const message =
+      typeof e.message === "string" ? e.message : "Authentication failed";
+    const status = typeof e.status === "number" ? e.status : undefined;
+    const code = typeof e.code === "string" ? e.code : undefined;
+    // Translate a few common codes into actionable hints rather than raw
+    // GoTrue strings, so users see something useful even before opening
+    // the Supabase/Twilio dashboards.
+    const userMessage = (() => {
+      if (code === "over_request_rate_limit" || status === 429) {
+        return "Too many attempts. Wait a minute and try again.";
+      }
+      if (code === "sms_send_failed") {
+        return "SMS provider rejected the message. Check your Supabase phone-auth and Twilio configuration.";
+      }
+      if (code === "phone_provider_disabled") {
+        return "Phone OTP is not enabled in Supabase. Enable Phone provider in Auth settings.";
+      }
+      return message;
+    })();
+    return { userMessage, code, status, raw: error };
+  }
+
+  return { userMessage: String(error), raw: error };
 }
 
 async function verifyOtp(params: {
@@ -105,10 +157,9 @@ async function verifyOtp(params: {
 
     return { session };
   } catch (error) {
-    return {
-      session: null,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
+    const detail = describeAuthError(error);
+    console.error("[auth] OTP verify failed", detail);
+    return { session: null, error: detail.userMessage };
   }
 }
 
@@ -129,10 +180,9 @@ async function signInWithEmailPassword(params: {
 
     return { session };
   } catch (error) {
-    return {
-      session: null,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
+    const detail = describeAuthError(error);
+    console.error("[auth] Email sign-in failed", detail);
+    return { session: null, error: detail.userMessage };
   }
 }
 

@@ -15,15 +15,38 @@ import {
   ShieldCheck,
   Timer,
   Landmark,
+  CheckCircle2,
 } from "lucide-react";
 import { AdaptiveImage } from "../components/AdaptiveImage";
 import { royaltyFreeImages } from "../lib/royalty-free-images";
 import { motion, useReducedMotion } from "framer-motion";
+import {
+  useWorkerCount,
+  useJobCategoryCounts,
+} from "../hooks/useWorkers";
+
+// Format helper that gracefully degrades to a dash while the live count
+// is loading (or to the fallback if Supabase is offline).
+function fmtCount(value: number | undefined, fallback: string): string {
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
+  return value.toLocaleString("en-IN");
+}
 
 export default function HomePage() {
   const { locale } = useUIStore();
   const isNepali = locale === "ne";
   const reduceMotion = useReducedMotion();
+
+  // Live counts — replaces the hardcoded "7 / 77 / 753 / 12" with real
+  // numbers from the database. The hooks degrade gracefully to undefined
+  // when Supabase is unconfigured, so we fall back to the geography
+  // constants we already know (provinces.length, districts count) rather
+  // than rendering "—" forever in offline/static preview mode.
+  const workerCount = useWorkerCount();
+  const jobCategoryCounts = useJobCategoryCounts();
+  const liveWorkers = workerCount.data?.total;
+  const liveAvailable = workerCount.data?.available;
+  const liveJobCount = jobCategoryCounts.data?.length;
 
   return (
     <div className="space-y-10 md:space-y-4">
@@ -115,6 +138,14 @@ export default function HomePage() {
                   ? "छिटो खोज, छिटो निर्णय"
                   : "Fast discovery, faster hiring"}
               </span>
+              {typeof liveAvailable === "number" && liveAvailable > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-300/40 text-emerald-100">
+                  <CheckCircle2 className="w-4 h-4" />
+                  {isNepali
+                    ? `अहिले ${fmtCount(liveAvailable, "0")} कामदार उपलब्ध`
+                    : `${fmtCount(liveAvailable, "0")} workers available now`}
+                </span>
+              )}
             </div>
           </div>
 
@@ -158,28 +189,34 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Stats */}
+      {/* Stats — coverage geography is static (we know it), worker counts
+          and job categories pull live from Supabase so the bar tells the
+          truth about adoption rather than aspirational round numbers. */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4 content-auto">
         {[
           {
-            icon: MapPin,
-            label: isNepali ? "प्रदेशहरू" : "Provinces",
-            value: "7",
+            icon: Users,
+            label: isNepali ? "दर्ता कामदार" : "Registered Workers",
+            value: fmtCount(liveWorkers, "—"),
+            highlight: true,
           },
           {
             icon: MapPin,
             label: isNepali ? "जिल्लाहरू" : "Districts",
             value: "77",
+            highlight: false,
           },
           {
-            icon: Users,
+            icon: Landmark,
             label: isNepali ? "स्थानीय तह" : "Local Units",
             value: "753",
+            highlight: false,
           },
           {
             icon: Star,
             label: isNepali ? "कार्य वर्ग" : "Job Types",
-            value: "12",
+            value: fmtCount(liveJobCount, String(jobCategories.length)),
+            highlight: false,
           },
         ].map((stat, index) => (
           <motion.div
@@ -194,10 +231,24 @@ export default function HomePage() {
             }}
             whileHover={reduceMotion ? undefined : { y: -3 }}
           >
-            <Card className="hover:shadow-card-hover transition-shadow duration-200">
+            <Card
+              className={`hover:shadow-card-hover transition-shadow duration-200 ${
+                stat.highlight
+                  ? "border-crimson-200 bg-gradient-to-br from-crimson-50/60 to-white"
+                  : ""
+              }`}
+            >
               <CardContent className="p-6 text-center">
-                <stat.icon className="w-8 h-8 mx-auto mb-2 text-crimson-700" />
-                <div className="text-3xl font-bold text-mountain-900">
+                <stat.icon
+                  className={`w-8 h-8 mx-auto mb-2 ${
+                    stat.highlight ? "text-crimson-800" : "text-crimson-700"
+                  }`}
+                />
+                <div
+                  className={`text-3xl font-bold ${
+                    stat.highlight ? "text-crimson-900" : "text-mountain-900"
+                  }`}
+                >
                   {stat.value}
                 </div>
                 <div className="text-sm text-terrain-500">{stat.label}</div>

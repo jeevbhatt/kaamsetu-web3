@@ -3,6 +3,7 @@ import {
   type ReportClientErrorInput,
 } from "@shram-sewa/shared/api";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
+import { captureException, captureMessage } from "./sentry";
 
 type WebErrorCategory = ReportClientErrorInput["category"];
 type WebErrorLevel = ReportClientErrorInput["level"];
@@ -81,6 +82,29 @@ function normalizeContext(
 export async function reportWebError(
   input: ReportWebErrorInput,
 ): Promise<void> {
+  const level = input.level ?? "error";
+  const normalizedContext = normalizeContext(input.context);
+
+  // Dual sink: Sentry (if VITE_SENTRY_DSN is configured) AND the in-house
+  // report-error edge function. Sentry is a no-op when unconfigured, so
+  // unconditional dispatch is safe.
+  if (level === "error" || level === "warning") {
+    // Build a synthetic Error so Sentry has a usable stack even when the
+    // upstream caller only had a message.
+    const synthetic = new Error(input.message);
+    if (input.stack) synthetic.stack = input.stack;
+    captureException(synthetic, {
+      category: input.category,
+      level,
+      ...normalizedContext,
+    });
+  } else {
+    captureMessage(input.message, level === "info" ? "info" : "debug", {
+      category: input.category,
+      ...normalizedContext,
+    });
+  }
+
   if (!canReportErrors()) {
     return;
   }
@@ -89,10 +113,10 @@ export async function reportWebError(
     await monitoringApi.reportClientError({
       source: "web",
       category: input.category,
-      level: input.level ?? "error",
+      level,
       message: input.message,
       stack: input.stack,
-      context: normalizeContext(input.context),
+      context: normalizedContext,
     });
   } catch (error) {
     console.warn("Web monitoring dispatch failed:", error);

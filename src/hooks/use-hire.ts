@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   hireApi,
   notificationsApi,
+  workersApi,
   type CreateHireRequest,
 } from "@shram-sewa/shared/api";
 import type {
@@ -51,6 +52,41 @@ export function useMyHires(enabled = true) {
     queryFn: () => hireApi.listByHirer(userId!),
     enabled: backendReady && !!userId,
     staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// The logged-in user's own worker profile (null if they are a hirer).
+// Used by the worker-side dashboard to look up the worker_profile.id
+// that gates incoming hire queries — `hireApi.listByWorker` keys off
+// the profile id, not the user id.
+export function useMyWorkerProfile(enabled = true) {
+  const backendReady = enabled && canUseBackend();
+  const userId = useAuthStore((state) => state.user?.id);
+
+  return useQuery({
+    queryKey: ["worker-profiles", "by-user", userId ?? ""],
+    queryFn: () => workersApi.getByUserId(userId!),
+    enabled: backendReady && !!userId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// Hire requests INCOMING to the current worker — the worker side of the
+// hire history (counterpart to useMyHires, which is the hirer side).
+// Empty array when called by a hirer or before the worker profile loads.
+export function useIncomingHires(
+  workerProfileId: string | undefined,
+  enabled = true,
+) {
+  const backendReady = enabled && canUseBackend();
+
+  return useQuery({
+    queryKey: queryKeys.hires.byWorker(workerProfileId ?? ""),
+    queryFn: () => hireApi.listByWorker(workerProfileId!),
+    enabled: backendReady && !!workerProfileId,
+    staleTime: 30 * 1000,
     refetchOnWindowFocus: false,
   });
 }

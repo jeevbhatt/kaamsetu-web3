@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { useParams, Link } from "@tanstack/react-router";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { useUIStore } from "../store";
 import { Button, Card, CardContent, Input } from "../components/ui";
 import { ArrowLeft, Calendar, Database } from "lucide-react";
@@ -13,43 +16,94 @@ import {
 import { useCreateHireMutation } from "../hooks";
 import NepaliDate from "nepali-date";
 
+// UI-shape schema for the hire form. Distinct from the API schema
+// (createHireRequestSchema in shared/validation): the form deals with
+// HTML input strings ("" empty, date string, optional rate-as-string),
+// then maps to the API's typed payload at submit time.
+const DURATION_OPTIONS = [1, 2, 3, 5, 7] as const;
+
+const hireFormSchema = z.object({
+  workDate: z
+    .string()
+    .min(1, "Work date is required")
+    .refine(
+      (value) => {
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return parsed >= today;
+      },
+      { message: "Work date cannot be in the past" },
+    ),
+  workDurationDays: z.coerce
+    .number()
+    .int()
+    .refine(
+      (value) => DURATION_OPTIONS.includes(value as (typeof DURATION_OPTIONS)[number]),
+      { message: "Select a valid duration" },
+    ),
+  description: z
+    .string()
+    .min(10, "Please describe the work in at least 10 characters")
+    .max(500, "Description must be 500 characters or fewer"),
+  // Rate is optional — UI labels it Optional, schema forwards undefined when blank.
+  agreedRateNpr: z
+    .union([
+      z.literal(""),
+      z.coerce
+        .number()
+        .int()
+        .min(500, "Daily rate must be at least NPR 500")
+        .max(10000, "Daily rate must not exceed NPR 10,000"),
+    ])
+    .optional()
+    .transform((value) => (value === "" || value === undefined ? undefined : value)),
+});
+
+type HireFormValues = z.input<typeof hireFormSchema>;
+type ParsedHireFormValues = z.output<typeof hireFormSchema>;
+
 export default function HirePage() {
   const { workerId } = useParams({ from: "/hire/$workerId" });
   const { locale } = useUIStore();
   const isNepali = locale === "ne";
   const backendConfigured = isSupabaseConfigured();
   const createHireMutation = useCreateHireMutation();
-
-  const [workDate, setWorkDate] = useState("");
-  const [duration, setDuration] = useState(1);
-  const [description, setDescription] = useState("");
-  const [agreedRateNpr, setAgreedRateNpr] = useState<number | "">("");
   const [isSuccess, setIsSuccess] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm<HireFormValues>({
+    resolver: zodResolver(hireFormSchema),
+    mode: "onTouched",
+    defaultValues: {
+      workDate: "",
+      workDurationDays: 1,
+      description: "",
+      agreedRateNpr: "",
+    },
+  });
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors, isSubmitting },
+  } = form;
+
+  const watchedDate = watch("workDate");
+
+  const onSubmit = async (raw: HireFormValues) => {
     setSubmitError("");
+
+    // Re-parse so we get the transformed (output) shape with normalized types.
+    const parsed = hireFormSchema.parse(raw) as ParsedHireFormValues;
 
     if (!backendConfigured) {
       setSubmitError(
         isNepali
           ? "भाडा अनुरोध सेवा अहिले उपलब्ध छैन।"
           : "Hire request service is currently unavailable.",
-      );
-      return;
-    }
-
-    if (!description.trim()) {
-      setSubmitError(
-        isNepali ? "कामको विवरण आवश्यक छ।" : "Work description is required.",
-      );
-      return;
-    }
-
-    if (!workDate) {
-      setSubmitError(
-        isNepali ? "काम मिति आवश्यक छ।" : "Work date is required.",
       );
       return;
     }
@@ -72,11 +126,10 @@ export default function HirePage() {
         workerId,
         hirerIp: hirerIp ?? undefined,
         ipFingerprint,
-        workDescription: description.trim(),
-        agreedRateNpr:
-          agreedRateNpr === "" ? undefined : Math.max(500, agreedRateNpr),
-        workDate: new Date(workDate),
-        workDurationDays: duration,
+        workDescription: parsed.description,
+        agreedRateNpr: parsed.agreedRateNpr,
+        workDate: new Date(parsed.workDate),
+        workDurationDays: parsed.workDurationDays,
       });
 
       if (hirerIp) {
@@ -120,6 +173,11 @@ export default function HirePage() {
     );
   }
 
+  const fieldErrorMessage = (key: keyof HireFormValues) => {
+    const message = errors[key]?.message;
+    return typeof message === "string" ? message : null;
+  };
+
   return (
     <div className="max-w-lg mx-auto space-y-6">
       <Link
@@ -150,26 +208,36 @@ export default function HirePage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            noValidate
+            className="space-y-5"
+          >
             <div>
               <label className="flex items-center gap-2 text-sm font-medium text-mountain-700 mb-1.5">
                 <div className="flex items-center">
                   <Calendar className="w-4 h-4 inline mr-1" />
                   {isNepali ? "काम मिति" : "Work Date"}
                 </div>
-                {workDate && (
+                {watchedDate && (
                   <span className="text-xs text-terrain-500 font-normal ml-auto">
                     (वि.सं.{" "}
-                    {new NepaliDate(new Date(workDate)).format("YYYY-MM-DD")})
+                    {(() => {
+                      const parsed = new Date(watchedDate);
+                      return Number.isNaN(parsed.getTime())
+                        ? ""
+                        : new NepaliDate(parsed).format("YYYY-MM-DD");
+                    })()}
+                    )
                   </span>
                 )}
               </label>
-              <Input
-                type="date"
-                value={workDate}
-                onChange={(e) => setWorkDate(e.target.value)}
-                required
-              />
+              <Input type="date" {...register("workDate")} />
+              {fieldErrorMessage("workDate") && (
+                <p className="mt-1 text-xs text-red-600">
+                  {fieldErrorMessage("workDate")}
+                </p>
+              )}
             </div>
 
             <div>
@@ -177,16 +245,20 @@ export default function HirePage() {
                 {isNepali ? "अवधि (दिन)" : "Duration (days)"}
               </label>
               <select
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
+                {...register("workDurationDays", { valueAsNumber: true })}
                 className="w-full h-10 rounded-md border border-terrain-300 px-3"
               >
-                {[1, 2, 3, 5, 7].map((day) => (
+                {DURATION_OPTIONS.map((day) => (
                   <option key={day} value={day}>
                     {day} {isNepali ? "दिन" : "days"}
                   </option>
                 ))}
               </select>
+              {fieldErrorMessage("workDurationDays") && (
+                <p className="mt-1 text-xs text-red-600">
+                  {fieldErrorMessage("workDurationDays")}
+                </p>
+              )}
             </div>
 
             <div>
@@ -196,13 +268,14 @@ export default function HirePage() {
               <Input
                 type="number"
                 min={500}
-                value={agreedRateNpr}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setAgreedRateNpr(value ? Number(value) : "");
-                }}
                 placeholder={isNepali ? "वैकल्पिक" : "Optional"}
+                {...register("agreedRateNpr")}
               />
+              {fieldErrorMessage("agreedRateNpr") && (
+                <p className="mt-1 text-xs text-red-600">
+                  {fieldErrorMessage("agreedRateNpr")}
+                </p>
+              )}
             </div>
 
             <div>
@@ -210,23 +283,30 @@ export default function HirePage() {
                 {isNepali ? "विवरण" : "Description"}
               </label>
               <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                {...register("description")}
                 rows={3}
                 className="w-full rounded-md border border-terrain-300 px-3 py-2"
-                required
               />
+              {fieldErrorMessage("description") && (
+                <p className="mt-1 text-xs text-red-600">
+                  {fieldErrorMessage("description")}
+                </p>
+              )}
             </div>
 
             <div className="bg-terrain-50 rounded-lg p-4">
               <div className="flex justify-between gap-2">
                 <span>{isNepali ? "दर" : "Rate"}</span>
                 <span className="font-medium text-terrain-700 text-right">
-                  {agreedRateNpr === ""
-                    ? isNepali
-                      ? "कामदारसँग छलफल गरी निश्चित गरिनेछ"
-                      : "Will be agreed directly with the worker"
-                    : `रु ${Number(agreedRateNpr).toLocaleString("en-IN")}/day`}
+                  {(() => {
+                    const v = watch("agreedRateNpr");
+                    if (v === "" || v === undefined) {
+                      return isNepali
+                        ? "कामदारसँग छलफल गरी निश्चित गरिनेछ"
+                        : "Will be agreed directly with the worker";
+                    }
+                    return `रु ${Number(v).toLocaleString("en-IN")}/day`;
+                  })()}
                 </span>
               </div>
             </div>
@@ -239,9 +319,13 @@ export default function HirePage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={createHireMutation.isPending || !backendConfigured}
+              disabled={
+                isSubmitting ||
+                createHireMutation.isPending ||
+                !backendConfigured
+              }
             >
-              {createHireMutation.isPending
+              {isSubmitting || createHireMutation.isPending
                 ? isNepali
                   ? "पठाउँदै..."
                   : "Sending..."
