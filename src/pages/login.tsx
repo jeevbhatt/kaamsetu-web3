@@ -197,13 +197,20 @@ export default function LoginPage() {
   return (
     <div className="max-w-sm mx-auto py-8">
       <div className="flex justify-center gap-2 mb-8">
+        {/* type="button" is critical: a bare <button> in a React tree
+            defaults to type=submit, which would submit the nearest
+            ancestor <form> on click. These switchers sit ABOVE the
+            forms today so it's currently harmless, but the explicit
+            attribute keeps them safe if the layout ever changes. */}
         <button
+          type="button"
           onClick={() => setLocale("ne")}
           className={`px-3 py-1 text-sm rounded-full ${locale === "ne" ? "bg-crimson-700 text-white" : "bg-terrain-200"}`}
         >
           नेपाली
         </button>
         <button
+          type="button"
           onClick={() => setLocale("en")}
           className={`px-3 py-1 text-sm rounded-full ${locale === "en" ? "bg-crimson-700 text-white" : "bg-terrain-200"}`}
         >
@@ -211,21 +218,28 @@ export default function LoginPage() {
         </button>
       </div>
 
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <img src="/logo.png" alt="Shram Sewa" className="h-16 w-auto mx-auto mb-4" />
         <h1 className="text-2xl font-bold text-mountain-900">
           {isNepali ? "श्रम सेवा" : "Shram Sewa"}
         </h1>
+        <p className="mt-2 text-sm text-terrain-500">
+          {isNepali
+            ? "तपाईंको मोबाइल नम्बरमा OTP पठाई पुष्टि गर्नेछौं"
+            : "We'll text you a 6-digit OTP to verify"}
+        </p>
       </div>
 
       <div className="flex justify-center gap-2 mb-4 border-b border-terrain-200">
         <button
+          type="button"
           onClick={switchToPhone}
           className={`pb-2 px-4 text-sm font-medium transition-colors ${authMethod === "phone" ? "text-crimson-700 border-b-2 border-crimson-700" : "text-terrain-500 hover:text-mountain-900"}`}
         >
           {isNepali ? "मोबाइल नम्बर" : "Mobile Phone"}
         </button>
         <button
+          type="button"
           onClick={switchToEmail}
           className={`pb-2 px-4 text-sm font-medium transition-colors ${authMethod === "email" ? "text-crimson-700 border-b-2 border-crimson-700" : "text-terrain-500 hover:text-mountain-900"}`}
         >
@@ -256,6 +270,8 @@ export default function LoginPage() {
                 <Input
                   type="email"
                   placeholder="user@example.com"
+                  autoFocus
+                  autoComplete="email"
                   {...emailForm.register("email")}
                 />
                 {localizeError(
@@ -277,6 +293,7 @@ export default function LoginPage() {
                 <Input
                   type="password"
                   placeholder="••••••••"
+                  autoComplete="current-password"
                   {...emailForm.register("password")}
                 />
                 {localizeError(
@@ -327,6 +344,8 @@ export default function LoginPage() {
                     placeholder="98XXXXXXXX"
                     className="rounded-l-none"
                     maxLength={10}
+                    autoFocus
+                    autoComplete="tel-national"
                     {...phoneForm.register("phone", {
                       // Sanitize input as the user types so paste / autofill
                       // can't slip non-digits past the regex.
@@ -384,6 +403,8 @@ export default function LoginPage() {
                   inputMode="numeric"
                   placeholder="000000"
                   maxLength={6}
+                  autoFocus
+                  autoComplete="one-time-code"
                   className="text-center text-2xl tracking-widest"
                   {...otpForm.register("otp", {
                     setValueAs: (value: string) =>
