@@ -178,13 +178,28 @@ export function Footer() {
                 <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <span>{isNepali ? "काठमाडौं, नेपाल" : "Kathmandu, Nepal"}</span>
               </li>
-              <li className="flex items-center gap-2">
-                <Phone className="w-4 h-4" />
-                <a href="tel:+9771XXXXXXX">+977 1-XXXXXXX</a>
-              </li>
+              {/* Phone is only rendered when PUBLIC_SUPPORT_PHONE is set.
+                  Previously the footer showed the placeholder string
+                  "+977 1-XXXXXXX" to every visitor — a real-user-visible
+                  stub. Hiding it is strictly better than showing fake. */}
+              {import.meta.env.PUBLIC_SUPPORT_PHONE && (
+                <li className="flex items-center gap-2">
+                  <Phone className="w-4 h-4" />
+                  <a
+                    href={`tel:${import.meta.env.PUBLIC_SUPPORT_PHONE}`}
+                  >
+                    {import.meta.env.PUBLIC_SUPPORT_PHONE}
+                  </a>
+                </li>
+              )}
               <li className="flex items-center gap-2">
                 <Mail className="w-4 h-4" />
-                <a href="mailto:info@shramsewa.gov.np">info@shramsewa.gov.np</a>
+                <a
+                  href={`mailto:${import.meta.env.PUBLIC_SUPPORT_EMAIL ?? "info@shramsewa.gov.np"}`}
+                >
+                  {import.meta.env.PUBLIC_SUPPORT_EMAIL ??
+                    "info@shramsewa.gov.np"}
+                </a>
               </li>
               <li>
                 <Link

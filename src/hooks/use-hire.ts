@@ -154,17 +154,72 @@ export function useUpdateHireStatusMutation() {
 
   return useMutation({
     mutationFn: (input: UpdateHireStatusInput) => hireApi.updateStatus(input),
-    onSuccess: (hire) => {
+    // Optimistic: flip the status locally before the server round-trip
+    // so Accept / Reject / Complete / Cancel feel instant on 2G. The DB
+    // is still the source of truth; if the mutation fails we restore.
+    onMutate: async (input) => {
+      const allKeys = [
+        queryKeys.hires.all,
+        queryKeys.hires.detail(input.hireId),
+      ];
+
+      await Promise.all(
+        allKeys.map((k) => queryClient.cancelQueries({ queryKey: k })),
+      );
+
+      // Snapshot every cached hire list/detail that might contain this row.
+      // We don't know which (hirer vs worker) bucket it lives in until we
+      // see the data, so we capture all and patch the matches in-place.
+      const matchedQueries = queryClient.getQueriesData<unknown>({
+        queryKey: queryKeys.hires.all,
+      });
+
+      const previous = matchedQueries.map(([key, data]) => ({ key, data }));
+
+      for (const [key, data] of matchedQueries) {
+        if (Array.isArray(data)) {
+          queryClient.setQueryData(
+            key,
+            (data as Array<{ id: string }>).map((row) =>
+              row.id === input.hireId ? { ...row, status: input.status } : row,
+            ),
+          );
+        } else if (
+          data &&
+          typeof data === "object" &&
+          (data as { id?: string }).id === input.hireId
+        ) {
+          queryClient.setQueryData(key, { ...data, status: input.status });
+        }
+      }
+
+      return { previous };
+    },
+    onError: (_err, _input, context) => {
+      // Restore every snapshot we captured so the UI doesn't show a fake
+      // success state when the server rejected the transition.
+      if (context?.previous) {
+        for (const { key, data } of context.previous) {
+          queryClient.setQueryData(key, data);
+        }
+      }
+    },
+    onSettled: (hire) => {
+      // Refetch from the canonical source on settle (success OR error)
+      // so we don't drift from server reality even if the optimistic
+      // patch covered all keys.
       queryClient.invalidateQueries({ queryKey: queryKeys.hires.all });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.hires.detail(hire.id),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.hires.byWorker(hire.workerId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.hires.byHirer(hire.hirerId),
-      });
+      if (hire) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.hires.detail(hire.id),
+        });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.hires.byWorker(hire.workerId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.hires.byHirer(hire.hirerId),
+        });
+      }
     },
   });
 }

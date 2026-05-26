@@ -26,20 +26,25 @@ export default function ContactPage() {
             </div>
           </div>
 
-          <div className="flex items-start gap-3">
-            <Phone className="w-4 h-4 mt-0.5 text-crimson-700" />
-            <div>
-              <p className="font-medium text-mountain-900">
-                {isNepali ? "फोन" : "Phone"}
-              </p>
-              <a
-                className="text-terrain-500 hover:text-crimson-700"
-                href="tel:+9771XXXXXXX"
-              >
-                +977 1-XXXXXXX
-              </a>
+          {/* Phone hidden by default — was previously rendering the
+              placeholder "+977 1-XXXXXXX" to every visitor. Set
+              PUBLIC_SUPPORT_PHONE to enable. */}
+          {import.meta.env.PUBLIC_SUPPORT_PHONE && (
+            <div className="flex items-start gap-3">
+              <Phone className="w-4 h-4 mt-0.5 text-crimson-700" />
+              <div>
+                <p className="font-medium text-mountain-900">
+                  {isNepali ? "फोन" : "Phone"}
+                </p>
+                <a
+                  className="text-terrain-500 hover:text-crimson-700"
+                  href={`tel:${import.meta.env.PUBLIC_SUPPORT_PHONE}`}
+                >
+                  {import.meta.env.PUBLIC_SUPPORT_PHONE}
+                </a>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex items-start gap-3">
             <Mail className="w-4 h-4 mt-0.5 text-crimson-700" />
@@ -49,9 +54,10 @@ export default function ContactPage() {
               </p>
               <a
                 className="text-terrain-500 hover:text-crimson-700"
-                href="mailto:info@shramsewa.gov.np"
+                href={`mailto:${import.meta.env.PUBLIC_SUPPORT_EMAIL ?? "info@shramsewa.gov.np"}`}
               >
-                info@shramsewa.gov.np
+                {import.meta.env.PUBLIC_SUPPORT_EMAIL ??
+                  "info@shramsewa.gov.np"}
               </a>
             </div>
           </div>
