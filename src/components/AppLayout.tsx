@@ -19,9 +19,15 @@ export function AppLayout() {
   }, [theme]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-terrain-50">
+    // overflow-x-hidden on the outermost wrapper is a defensive belt-and-
+    // braces: any future stray child whose content extends past the
+    // viewport (long unbreakable string, oversized image, mis-applied
+    // negative margin) gets clipped instead of expanding the body's
+    // scrollWidth — which is what causes mobile pages to look like
+    // they have a phantom right-side gap.
+    <div className="min-h-screen flex flex-col bg-terrain-50 overflow-x-hidden">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 py-8">
         <Outlet />
       </main>

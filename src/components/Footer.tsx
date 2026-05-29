@@ -93,7 +93,13 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 md:gap-8 md:grid-cols-4">
+        {/* Mobile starts at 2 columns so each column has room for long
+            strings like the email; 3 columns at sm; 4 at md. Previously
+            3-col on mobile crammed columns to ~108px which is narrower
+            than `info@shramsewa.gov.np` — the link overflowed and pushed
+            the page's scrollWidth past the viewport, creating the
+            phantom right-side gap the user was seeing. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 md:gap-8 md:grid-cols-4">
           {/* Quick Links */}
           <div>
             <h3 className="font-bold text-base md:text-lg mb-4">
@@ -183,19 +189,25 @@ export function Footer() {
                   "+977 1-XXXXXXX" to every visitor — a real-user-visible
                   stub. Hiding it is strictly better than showing fake. */}
               {import.meta.env.PUBLIC_SUPPORT_PHONE && (
-                <li className="flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
+                <li className="flex items-center gap-2 min-w-0">
+                  <Phone className="w-4 h-4 flex-shrink-0" />
                   <a
                     href={`tel:${import.meta.env.PUBLIC_SUPPORT_PHONE}`}
+                    className="truncate"
                   >
                     {import.meta.env.PUBLIC_SUPPORT_PHONE}
                   </a>
                 </li>
               )}
-              <li className="flex items-center gap-2">
-                <Mail className="w-4 h-4" />
+              {/* min-w-0 on the flex li + break-all on the link lets the
+                  long unbreakable email wrap inside the column instead
+                  of forcing the entire footer grid to expand past the
+                  viewport. flex-shrink-0 on the icon keeps it square. */}
+              <li className="flex items-start gap-2 min-w-0">
+                <Mail className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <a
                   href={`mailto:${import.meta.env.PUBLIC_SUPPORT_EMAIL ?? "info@shramsewa.gov.np"}`}
+                  className="break-all"
                 >
                   {import.meta.env.PUBLIC_SUPPORT_EMAIL ??
                     "info@shramsewa.gov.np"}

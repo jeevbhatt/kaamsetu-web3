@@ -118,13 +118,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      react: path.resolve(__dirname, "node_modules/react"),
-      "react-dom": path.resolve(__dirname, "node_modules/react-dom"),
-      "@tanstack/react-query": path.resolve(
-        __dirname,
-        "node_modules/@tanstack/react-query",
-      ),
     },
+    // dedupe still enforces single-version semantics for these packages
+    // across the workspace, but we no longer pin them to apps/web/node_modules
+    // because pnpm's hoisted node-linker installs them at the root
+    // node_modules/ (apps/web/node_modules only ends up with packages that
+    // need workspace-specific versions). Hard-coded paths broke after the
+    // SDK 52 reinstall reshuffled the install layout.
     dedupe: ["react", "react-dom", "@tanstack/react-query"],
   },
   server: {

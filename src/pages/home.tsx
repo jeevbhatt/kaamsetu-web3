@@ -66,8 +66,14 @@ export default function HomePage() {
         </motion.div>
       </section>
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden rounded-[2rem] border border-mountain-700/20 bg-hero-mesh px-6 py-8 md:px-10 md:py-12 text-white">
+      {/* Hero Section
+          Mobile: break out of the page wrapper's px-4 with -mx-4 so the
+          hero is edge-to-edge (no awkward gap framing the card on small
+          screens). Soften the corner radius to rounded-3xl on mobile so
+          the bleed reads as "page header" not "floating card".
+          Desktop (sm+): restore mx-0 and the original rounded-[2rem]
+          inset-card look. */}
+      <section className="relative overflow-hidden -mx-4 sm:mx-0 rounded-3xl sm:rounded-[2rem] border border-mountain-700/20 bg-hero-mesh px-5 py-7 md:px-10 md:py-12 text-white">
         <div className="absolute inset-0 opacity-30">
           <AdaptiveImage
             image={royaltyFreeImages.hero}
