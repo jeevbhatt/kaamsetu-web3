@@ -116,6 +116,14 @@ export function Footer() {
               </li>
               <li>
                 <Link
+                  to="/most-hired"
+                  className="text-terrain-100 hover:text-gold-300 transition-colors"
+                >
+                  {isNepali ? "शीर्ष भाडा" : "Top Hires"}
+                </Link>
+              </li>
+              <li>
+                <Link
                   to="/login"
                   className="text-terrain-100 hover:text-gold-300 transition-colors"
                 >

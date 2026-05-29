@@ -1,22 +1,16 @@
 import { Link } from "@tanstack/react-router";
 import { Bell } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  useNotifications,
-  useNotificationsSubscription,
-} from "../hooks";
+import { useNotifications } from "../hooks";
 import { useAuthStore, useUIStore } from "../store";
 
-// Mounting this component anywhere also drives the realtime subscription, so
-// the hosting surface (the global header) opens a single channel for the
-// whole session — pages that just render the bell don't pay extra cost and
-// don't need their own subscription.
+// The realtime subscription is mounted once at the app root, so this component
+// only handles display state.
 export function NotificationBell() {
   const { isAuthenticated } = useAuthStore();
   const { locale } = useUIStore();
   const isNepali = locale === "ne";
 
-  useNotificationsSubscription(isAuthenticated);
   const { data } = useNotifications(isAuthenticated);
 
   if (!isAuthenticated) {

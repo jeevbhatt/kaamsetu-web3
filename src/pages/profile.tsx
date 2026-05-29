@@ -4,7 +4,6 @@ import { Link } from "@tanstack/react-router";
 import {
   useMyHires,
   useNotifications,
-  useNotificationsSubscription,
   useUpdateHireStatusMutation,
   useWorker,
   useMarkNotificationAsReadMutation,
@@ -42,8 +41,6 @@ export default function ProfilePage() {
     myWorkerProfile.data?.id,
     isAuthenticated && isWorker,
   );
-
-  useNotificationsSubscription(isAuthenticated);
 
   const hireHistory = hiresQuery.data ?? [];
   const activeHires = hireHistory.filter(
@@ -133,12 +130,16 @@ export default function ProfilePage() {
                   className="w-full h-full object-cover"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = "none";
-                    const fallback = (e.target as HTMLImageElement).parentElement?.querySelector(".avatar-fallback");
+                    const fallback = (
+                      e.target as HTMLImageElement
+                    ).parentElement?.querySelector(".avatar-fallback");
                     if (fallback) fallback.classList.remove("hidden");
                   }}
                 />
               ) : null}
-              <span className={`avatar-fallback ${user?.avatarUrl ? "hidden" : ""}`}>
+              <span
+                className={`avatar-fallback ${user?.avatarUrl ? "hidden" : ""}`}
+              >
                 <User className="w-8 h-8 text-crimson-700" />
               </span>
             </div>
@@ -271,9 +272,7 @@ export default function ProfilePage() {
             </ul>
           ) : (
             <p className="text-sm text-terrain-500">
-              {isNepali
-                ? "कुनै सूचना उपलब्ध छैन"
-                : "No notifications yet"}
+              {isNepali ? "कुनै सूचना उपलब्ध छैन" : "No notifications yet"}
             </p>
           )}
         </CardContent>

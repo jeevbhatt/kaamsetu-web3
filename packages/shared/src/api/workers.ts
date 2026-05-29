@@ -17,6 +17,8 @@ export interface WorkerFilters {
   minRating?: number;
   maxDailyRate?: number;
   search?: string;
+  sortBy?: "created_at" | "total_hires" | "avg_rating";
+  sortDirection?: "asc" | "desc";
 }
 
 type WorkerRelation = {
@@ -203,6 +205,21 @@ export const workersApi = {
       // Refactored to avoid dot-notation in .or() which can cause "Database error querying schema"
       // We'll stick to fields in the base table for now.
       query = query.ilike("about", s);
+    }
+
+    const sortDirection = filters.sortDirection === "asc";
+    if (filters.sortBy === "total_hires") {
+      query = query
+        .order("total_hires", { ascending: sortDirection })
+        .order("avg_rating", { ascending: false })
+        .order("created_at", { ascending: false });
+    } else if (filters.sortBy === "avg_rating") {
+      query = query
+        .order("avg_rating", { ascending: sortDirection })
+        .order("total_hires", { ascending: false })
+        .order("created_at", { ascending: false });
+    } else {
+      query = query.order("created_at", { ascending: false });
     }
 
     const { data, error, count } = await query;

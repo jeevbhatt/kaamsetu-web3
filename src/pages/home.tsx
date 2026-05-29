@@ -16,6 +16,7 @@ import {
   Timer,
   Landmark,
   CheckCircle2,
+  Trophy,
 } from "lucide-react";
 import { AdaptiveImage } from "../components/AdaptiveImage";
 import { royaltyFreeImages } from "../lib/royalty-free-images";
@@ -424,6 +425,46 @@ export default function HomePage() {
             </motion.div>
           ))}
         </div>
+      </section>
+
+      {/* Most hired spotlight */}
+      <section className="content-auto">
+        <Card className="border-terrain-200 bg-gradient-to-br from-terrain-50 via-white to-gold-50/50">
+          <CardContent className="p-6 md:p-8 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+            <div className="space-y-3">
+              <Badge variant="gold" className="inline-flex items-center gap-2">
+                <Trophy className="w-4 h-4" />
+                {isNepali ? "शीर्ष भाडा" : "Top Hires"}
+              </Badge>
+              <h3 className="text-2xl md:text-3xl font-display font-bold text-mountain-900">
+                {isNepali
+                  ? "सबैभन्दा धेरै भाडामा लिइएका कामदारहरू"
+                  : "Most hired workers this season"}
+              </h3>
+              <p className="text-terrain-600 max-w-2xl">
+                {isNepali
+                  ? "स्थानीय सरकारले विश्वास गरेको, पटक पटक भाडामा लिइएका कामदारहरूको सूची हेरेर सुरक्षित निर्णय गर्नुहोस्।"
+                  : "Explore trusted workers with the strongest hire history across local governments."}
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+              <Link to="/most-hired" preload="intent" className="w-full sm:w-auto">
+                <Button size="lg" className="rounded-full w-full">
+                  {isNepali ? "शीर्ष कामदार हेर्नुहोस्" : "View top workers"}
+                </Button>
+              </Link>
+              <Link to="/search" preload="intent" className="w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="rounded-full w-full"
+                >
+                  {isNepali ? "सबै कामदार खोज्नुहोस्" : "Browse all workers"}
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
       {/* How it works */}

@@ -46,6 +46,26 @@ export function useWorkers(
 }
 
 /**
+ * Get the most hired workers for spotlight listings.
+ */
+export function useMostHiredWorkers(
+  pageSize = 12,
+  enabled = true,
+  isAvailable?: boolean,
+) {
+  return useWorkers(
+    {
+      sortBy: "total_hires",
+      sortDirection: "desc",
+      isAvailable,
+    },
+    1,
+    pageSize,
+    enabled,
+  );
+}
+
+/**
  * Get single worker by ID
  */
 export function useWorker(workerId: string | undefined, enabled = true) {

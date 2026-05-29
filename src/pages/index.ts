@@ -1,5 +1,6 @@
 export { default as HomePage } from "./home";
 export { default as SearchPage } from "./search";
+export { default as MostHiredPage } from "./most-hired";
 export { default as WorkerPage } from "./worker";
 export { default as HirePage } from "./hire";
 export { default as ProfilePage } from "./profile";

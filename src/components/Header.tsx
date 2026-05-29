@@ -53,6 +53,13 @@ export function Header() {
               {isNepali ? "कामदार खोज्नुहोस्" : "Find Workers"}
             </Link>
             <Link
+              to="/most-hired"
+              preload="intent"
+              className="rounded-full px-3 py-2 text-sm font-medium text-mountain-900 hover:bg-terrain-100 hover:text-crimson-700 transition-colors"
+            >
+              {isNepali ? "शीर्ष भाडा" : "Top Hires"}
+            </Link>
+            <Link
               to="/login"
               preload="intent"
               className="rounded-full px-3 py-2 text-sm font-medium text-mountain-900 hover:bg-terrain-100 hover:text-crimson-700 transition-colors"

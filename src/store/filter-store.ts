@@ -10,6 +10,11 @@ import type { WorkerSearchFilters } from "@shram-sewa/shared";
 interface FilterState {
   // Current filters
   filters: WorkerSearchFilters;
+  searchQuery: string;
+
+  // Last used filters (persisted across sessions)
+  lastUsedFilters: WorkerSearchFilters;
+  lastUsedSearchQuery: string;
 
   // Convenience accessors (flat access)
   provinceId: number | undefined;
@@ -27,6 +32,13 @@ interface FilterState {
     value: WorkerSearchFilters[K],
   ) => void;
   setFilters: (filters: Partial<WorkerSearchFilters>) => void;
+  setFiltersFromUrl: (
+    filters: Partial<WorkerSearchFilters>,
+    options?: { replace?: boolean },
+  ) => void;
+  restoreLastUsed: () => void;
+  setSearchQuery: (value: string) => void;
+  setSearchQueryFromUrl: (value: string) => void;
   setProvinceId: (id: number | undefined) => void;
   setDistrictId: (id: number | undefined) => void;
   setJobCategory: (id: number | undefined) => void;
@@ -46,6 +58,9 @@ export const useFilterStore = create<FilterState>()(
     (set, get) => ({
       // Initial state
       filters: defaultFilters,
+      searchQuery: "",
+      lastUsedFilters: defaultFilters,
+      lastUsedSearchQuery: "",
       recentProvinces: [],
       recentDistricts: [],
       recentJobCategories: [],
@@ -63,33 +78,77 @@ export const useFilterStore = create<FilterState>()(
 
       // Actions
       setFilter: (key, value) =>
-        set((state) => ({
-          filters: { ...state.filters, [key]: value },
-        })),
+        set((state) => {
+          const nextFilters = { ...state.filters, [key]: value };
+          return { filters: nextFilters, lastUsedFilters: nextFilters };
+        }),
 
       setFilters: (newFilters) =>
+        set((state) => {
+          const nextFilters = { ...state.filters, ...newFilters };
+          return { filters: nextFilters, lastUsedFilters: nextFilters };
+        }),
+
+      setFiltersFromUrl: (newFilters, options) =>
+        set((state) => {
+          const baseFilters = options?.replace
+            ? { ...defaultFilters }
+            : state.filters;
+          return {
+            filters: { ...baseFilters, ...newFilters },
+          };
+        }),
+
+      restoreLastUsed: () =>
         set((state) => ({
-          filters: { ...state.filters, ...newFilters },
+          filters: state.lastUsedFilters ?? defaultFilters,
+          searchQuery: state.lastUsedSearchQuery ?? "",
+        })),
+
+      setSearchQuery: (value) =>
+        set(() => ({
+          searchQuery: value,
+          lastUsedSearchQuery: value,
+        })),
+
+      setSearchQueryFromUrl: (value) =>
+        set(() => ({
+          searchQuery: value,
         })),
 
       setProvinceId: (id) =>
-        set((state) => ({
-          filters: { ...state.filters, provinceId: id },
-        })),
+        set((state) => {
+          const nextFilters = { ...state.filters, provinceId: id };
+          return { filters: nextFilters, lastUsedFilters: nextFilters };
+        }),
 
       setDistrictId: (id) =>
-        set((state) => ({
-          filters: { ...state.filters, districtId: id },
-        })),
+        set((state) => {
+          const nextFilters = { ...state.filters, districtId: id };
+          return { filters: nextFilters, lastUsedFilters: nextFilters };
+        }),
 
       setJobCategory: (id) =>
-        set((state) => ({
-          filters: { ...state.filters, jobCategoryId: id },
-        })),
+        set((state) => {
+          const nextFilters = { ...state.filters, jobCategoryId: id };
+          return { filters: nextFilters, lastUsedFilters: nextFilters };
+        }),
 
-      clearFilters: () => set({ filters: defaultFilters }),
+      clearFilters: () =>
+        set({
+          filters: { ...defaultFilters },
+          searchQuery: "",
+          lastUsedFilters: { ...defaultFilters },
+          lastUsedSearchQuery: "",
+        }),
 
-      resetFilters: () => set({ filters: defaultFilters }),
+      resetFilters: () =>
+        set({
+          filters: { ...defaultFilters },
+          searchQuery: "",
+          lastUsedFilters: { ...defaultFilters },
+          lastUsedSearchQuery: "",
+        }),
 
       addRecentProvince: (id) =>
         set((state) => ({
@@ -118,6 +177,38 @@ export const useFilterStore = create<FilterState>()(
     {
       name: "shram-sewa-filters",
       storage: createJSONStorage(() => localStorage),
+      version: 2,
+      migrate: (persistedState, version) => {
+        if (!persistedState || typeof persistedState !== "object") {
+          return persistedState as FilterState;
+        }
+
+        if (version < 2) {
+          const legacy = persistedState as Partial<FilterState> & {
+            filters?: WorkerSearchFilters;
+            searchQuery?: string;
+          };
+          return {
+            ...legacy,
+            lastUsedFilters:
+              legacy.lastUsedFilters ?? legacy.filters ?? defaultFilters,
+            lastUsedSearchQuery:
+              legacy.lastUsedSearchQuery ?? legacy.searchQuery ?? "",
+          } as FilterState;
+        }
+
+        return persistedState as FilterState;
+      },
+      partialize: (state) => ({
+        lastUsedFilters: state.lastUsedFilters,
+        lastUsedSearchQuery: state.lastUsedSearchQuery,
+        recentProvinces: state.recentProvinces,
+        recentDistricts: state.recentDistricts,
+        recentJobCategories: state.recentJobCategories,
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.restoreLastUsed();
+      },
     },
   ),
 );

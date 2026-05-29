@@ -27,14 +27,24 @@ import {
 import { useToast } from "../components/ToastContainer";
 import { Search, Filter, X, Database, AlertTriangle } from "lucide-react";
 import type { WorkerDisplay } from "@shram-sewa/shared";
-import { useWorkers, useDebouncedValue } from "../hooks";
-import { getSupabaseClient, isSupabaseConfigured } from "../lib";
+import { useWorkers, useDebouncedValue, useJobCategories } from "../hooks";
+import { isSupabaseConfigured } from "../lib";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
-const jobCategoryOptions = jobCategories.map((category, index) => ({
-  ...category,
-  id: index + 1,
-}));
+type JobCategoryOption = {
+  id: number;
+  slug: string;
+  nameEn: string;
+  nameNp: string;
+  icon?: string;
+};
+
+const staticJobCategoryOptions: JobCategoryOption[] = jobCategories.map(
+  (category, index) => ({
+    ...category,
+    id: index + 1,
+  }),
+);
 
 const PAGE_COLUMNS = 3;
 const PAGE_ROWS = 3;
@@ -97,6 +107,11 @@ export default function SearchPage() {
   const { locale } = useUIStore();
   const {
     filters,
+    searchQuery,
+    setSearchQuery,
+    setSearchQueryFromUrl,
+    setFiltersFromUrl,
+    restoreLastUsed,
     setProvinceId,
     setDistrictId,
     setJobCategory,
@@ -107,7 +122,6 @@ export default function SearchPage() {
   const districtId = filters.districtId;
   const jobCategory = filters.jobCategoryId;
 
-  const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(() =>
     parsePageParam(new URLSearchParams(window.location.search).get("page")),
   );
@@ -129,8 +143,34 @@ export default function SearchPage() {
   const isNepali = locale === "ne";
   const reduceMotion = useReducedMotion();
   const backendConfigured = isSupabaseConfigured();
+  const jobCategoriesQuery = useJobCategories(backendConfigured);
+  const backendJobCategoryOptions = useMemo<JobCategoryOption[]>(() => {
+    if (!backendConfigured || !(jobCategoriesQuery.data ?? []).length) {
+      return [];
+    }
+
+    return (jobCategoriesQuery.data ?? []).map((category: any) => ({
+      id: Number(category.id),
+      slug: String(category.slug),
+      nameEn:
+        typeof category.name_en === "string"
+          ? category.name_en
+          : (category.nameEn ?? ""),
+      nameNp:
+        typeof category.name_np === "string"
+          ? category.name_np
+          : (category.nameNp ?? ""),
+      icon: category.icon ?? undefined,
+    }));
+  }, [backendConfigured, jobCategoriesQuery.data]);
+  const jobCategoryOptions =
+    backendJobCategoryOptions.length > 0
+      ? backendJobCategoryOptions
+      : staticJobCategoryOptions;
   const districts = provinceId ? getDistrictsByProvince(provinceId) : [];
-  const hasActiveFilters = Boolean(provinceId || districtId || jobCategory);
+  const hasActiveFilters = Boolean(
+    provinceId || districtId || jobCategory || searchQuery.trim(),
+  );
   const queryPage = isSearching ? 1 : currentPage;
   const queryPageSize = isSearching ? 300 : PAGE_SIZE;
 
@@ -161,61 +201,102 @@ export default function SearchPage() {
       !!jobCategorySlugFromUrl;
 
     if (!hasUrlFilters) {
+      restoreLastUsed();
       return;
     }
 
-    setProvinceId(provinceFromUrl);
-    setDistrictId(districtFromUrl);
-    setJobCategory(jobCategoryIdFromUrl);
+    const urlFilters: Record<string, number> = {};
+    if (provinceFromUrl !== undefined) {
+      urlFilters.provinceId = provinceFromUrl;
+    }
+    if (districtFromUrl !== undefined) {
+      urlFilters.districtId = districtFromUrl;
+    }
+    if (jobCategoryIdFromUrl !== undefined) {
+      urlFilters.jobCategoryId = jobCategoryIdFromUrl;
+    }
+
+    setFiltersFromUrl(urlFilters, { replace: true });
+    setSearchQueryFromUrl("");
     setPendingCategorySlug(
       jobCategoryIdFromUrl ? undefined : (jobCategorySlugFromUrl ?? undefined),
     );
-  }, [setDistrictId, setJobCategory, setProvinceId]);
+  }, [restoreLastUsed, setFiltersFromUrl, setSearchQueryFromUrl]);
 
   useEffect(() => {
     if (!pendingCategorySlug) {
       return;
     }
 
-    const staticCategory = jobCategories.find(
+    const staticCategory = staticJobCategoryOptions.find(
       (category) => category.slug === pendingCategorySlug,
     );
 
     // Ensure slug links still narrow results even if category ids differ by environment.
     if (staticCategory) {
-      setSearchQuery((previousQuery) =>
-        previousQuery.trim() ? previousQuery : staticCategory.nameEn,
-      );
+      if (!searchQuery.trim()) {
+        setSearchQueryFromUrl(staticCategory.nameEn);
+      }
+      if (!jobCategory) {
+        setFiltersFromUrl({ jobCategoryId: staticCategory.id });
+      }
     }
 
-    if (!backendConfigured) {
+    if (!backendConfigured || backendJobCategoryOptions.length === 0) {
       return;
     }
 
-    let isCancelled = false;
+    const backendCategory = backendJobCategoryOptions.find(
+      (category) => category.slug === pendingCategorySlug,
+    );
+    if (backendCategory && backendCategory.id !== jobCategory) {
+      setFiltersFromUrl({ jobCategoryId: backendCategory.id });
+    }
+  }, [
+    backendConfigured,
+    backendJobCategoryOptions,
+    jobCategory,
+    pendingCategorySlug,
+    searchQuery,
+    setFiltersFromUrl,
+    setSearchQueryFromUrl,
+  ]);
 
-    (async () => {
-      try {
-        const supabase = getSupabaseClient();
-        const { data, error } = (await supabase
-          .from("job_categories")
-          .select("id")
-          .eq("is_active", true)
-          .eq("slug", pendingCategorySlug)
-          .maybeSingle()) as { data: { id: number } | null; error: unknown };
+  useEffect(() => {
+    if (!backendConfigured || backendJobCategoryOptions.length === 0) {
+      return;
+    }
 
-        if (!isCancelled && !error && data?.id) {
-          setJobCategory(data.id);
-        }
-      } catch {
-        // Keep text search fallback if category lookup fails.
-      }
-    })();
+    if (!jobCategory) {
+      return;
+    }
 
-    return () => {
-      isCancelled = true;
-    };
-  }, [backendConfigured, pendingCategorySlug, setJobCategory]);
+    const backendMatch = backendJobCategoryOptions.find(
+      (category) => category.id === jobCategory,
+    );
+    if (backendMatch) {
+      return;
+    }
+
+    const staticMatch = staticJobCategoryOptions.find(
+      (category) => category.id === jobCategory,
+    );
+    if (!staticMatch) {
+      return;
+    }
+
+    const mapped = backendJobCategoryOptions.find(
+      (category) => category.slug === staticMatch.slug,
+    );
+    if (mapped) {
+      setJobCategory(mapped.id);
+    }
+  }, [
+    backendConfigured,
+    backendJobCategoryOptions,
+    jobCategory,
+    setJobCategory,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -275,6 +356,7 @@ export default function SearchPage() {
   const handleClearFilters = () => {
     startTransition(() => {
       clearFilters();
+      setPendingCategorySlug(undefined);
       setCurrentPage(1);
     });
   };

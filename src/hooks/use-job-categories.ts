@@ -4,7 +4,7 @@ import { queryKeys } from "../lib/query-client";
 
 export function useJobCategories(enabled: boolean = true) {
   return useQuery({
-    queryKey: queryKeys.workers.all, // Using workers.all to avoid creating new key types just for this
+    queryKey: queryKeys.jobCategories.all,
     queryFn: async () => {
       const { data, error } = await getSupabaseClient()
         .from("job_categories")

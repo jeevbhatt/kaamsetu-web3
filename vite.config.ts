@@ -22,6 +22,7 @@ export default defineConfig({
       manifest: {
         name: "श्रम सेवा — Nepal Manpower",
         short_name: "श्रम सेवा",
+        lang: "ne",
         description: "Nepal Local Government Manpower Platform",
         theme_color: "#7C1D2B",
         background_color: "#FAF7F0",

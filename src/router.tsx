@@ -20,6 +20,7 @@ import { useAuthStore } from "./store/auth-store";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { ToastContainer } from "./components/ToastContainer";
+import { useNotificationsSubscription } from "./hooks";
 
 // Lazy load pages for code splitting
 const HomePage = lazy(() => import("./pages/home"));
@@ -28,6 +29,7 @@ const WorkerPage = lazy(() => import("./pages/worker"));
 const HirePage = lazy(() => import("./pages/hire"));
 const ProfilePage = lazy(() => import("./pages/profile"));
 const LoginPage = lazy(() => import("./pages/login"));
+const MostHiredPage = lazy(() => import("./pages/most-hired"));
 const HowItWorksPage = lazy(() => import("./pages/how-it-works"));
 const FaqPage = lazy(() => import("./pages/faq"));
 const PrivacyPage = lazy(() => import("./pages/privacy"));
@@ -126,9 +128,12 @@ function AnimatedOutlet() {
 function RootLayout() {
   const { theme, locale } = useUIStore();
   const initializeAuth = useAuthStore((state) => state.initialize);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+
+  useNotificationsSubscription(isAuthenticated);
 
   useEffect(() => {
     void initializeAuth();
@@ -269,6 +274,16 @@ const searchRoute = createRoute({
   ),
 });
 
+const mostHiredRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/most-hired",
+  component: () => (
+    <Suspense fallback={<PageLoader />}>
+      <MostHiredPage />
+    </Suspense>
+  ),
+});
+
 const workerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/worker/$workerId",
@@ -386,6 +401,7 @@ const contactRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   searchRoute,
+  mostHiredRoute,
   workerRoute,
   hireRoute,
   profileRoute,
