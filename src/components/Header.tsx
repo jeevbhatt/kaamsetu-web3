@@ -5,14 +5,14 @@
 
 import { Link } from "@tanstack/react-router";
 import { Button } from "./ui";
-import { Menu, Globe, LogIn, User } from "lucide-react";
+import { Globe, LogIn, User } from "lucide-react";
 import { useUIStore } from "../store";
 import { useAuthStore } from "../store/auth-store";
 import { motion } from "framer-motion";
 import { NotificationBell } from "./NotificationBell";
 
 export function Header() {
-  const { locale, toggleLocale, toggleSidebar } = useUIStore();
+  const { locale, toggleLocale } = useUIStore();
   const { isAuthenticated, user } = useAuthStore();
   const isNepali = locale === "ne";
 
@@ -103,16 +103,50 @@ export function Header() {
             )}
           </nav>
 
-          {/* Mobile Language Toggle Instead of Menu */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="md:hidden gap-2 rounded-full"
-            onClick={toggleLocale}
-          >
-            <Globe className="w-4 h-4" />
-            <span>{isNepali ? "EN" : "नेपाली"}</span>
-          </Button>
+          {/* Mobile actions — previously only a language toggle, which
+              meant a phone user had NO visible way to log in (the only
+              path was the bottom-nav "Profile" tab silently redirecting).
+              Now we surface: bell (auth only) + lang toggle + an explicit
+              Login / Profile button. */}
+          <div className="md:hidden flex items-center gap-1.5">
+            <NotificationBell />
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 rounded-full px-2.5"
+              onClick={toggleLocale}
+              aria-label={isNepali ? "भाषा परिवर्तन" : "Change language"}
+            >
+              <Globe className="w-4 h-4" />
+              <span>{isNepali ? "EN" : "ने"}</span>
+            </Button>
+            {isAuthenticated ? (
+              <Link
+                to="/profile"
+                preload="intent"
+                aria-label={isNepali ? "प्रोफाइल" : "Profile"}
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full px-2.5"
+                >
+                  <User className="w-4 h-4" />
+                </Button>
+              </Link>
+            ) : (
+              <Link
+                to="/login"
+                preload="intent"
+                aria-label={isNepali ? "लगइन" : "Login"}
+              >
+                <Button size="sm" className="gap-1.5 rounded-full px-3">
+                  <LogIn className="w-4 h-4" />
+                  <span>{isNepali ? "लगइन" : "Login"}</span>
+                </Button>
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     </header>

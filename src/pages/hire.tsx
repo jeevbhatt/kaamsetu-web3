@@ -12,6 +12,7 @@ import {
   isSupabaseConfigured,
   resolveClientIpAddress,
   setHireIpLock,
+  translateError,
 } from "../lib";
 import { useCreateHireMutation } from "../hooks";
 import NepaliDate from "nepali-date";
@@ -137,10 +138,10 @@ export default function HirePage() {
       }
       setIsSuccess(true);
     } catch (error) {
-      const fallback = isNepali
-        ? "भाडा अनुरोध पठाउन सकिएन। कृपया फेरि प्रयास गर्नुहोस्।"
-        : "Unable to send hire request. Please try again.";
-      setSubmitError(error instanceof Error ? error.message : fallback);
+      // context: "hire" → a duplicate (same IP already requested this
+      // worker) becomes "You have already sent a hire request…" instead
+      // of a raw 409 / 23505.
+      setSubmitError(translateError(error, { isNepali, context: "hire" }));
     }
   };
 

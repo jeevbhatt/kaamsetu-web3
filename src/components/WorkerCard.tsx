@@ -100,11 +100,26 @@ export function WorkerCard({
                     {displayName}
                   </h3>
                 </Link>
-                <p className="text-sm text-terrain-500">
-                  {isNepali
-                    ? worker.jobCategory.nameNp
-                    : worker.jobCategory.nameEn}
-                </p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm text-terrain-500">
+                    {isNepali
+                      ? worker.jobCategory.nameNp
+                      : worker.jobCategory.nameEn}
+                  </p>
+                  {worker.isApproved && (
+                    <span
+                      className="inline-flex items-center gap-0.5 text-[11px] font-medium text-green-700"
+                      title={
+                        isNepali
+                          ? "श्रम सेवाद्वारा प्रमाणित"
+                          : "Verified by Shram Sewa"
+                      }
+                    >
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      {isNepali ? "प्रमाणित" : "Verified"}
+                    </span>
+                  )}
+                </div>
               </div>
               {worker.isAvailable && (
                 <Badge variant="success" className="flex-shrink-0">

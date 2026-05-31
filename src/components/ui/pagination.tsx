@@ -3,6 +3,21 @@ import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "./button";
+import { useUIStore } from "../../store";
+
+// Localized labels for the prev/next/ellipsis controls. Kept in this
+// primitive (rather than passed as props from every call site) so the
+// whole app gets bilingual pagination for free.
+function usePaginationLabels() {
+  const isNepali = useUIStore((s) => s.locale === "ne");
+  return {
+    previous: isNepali ? "अघिल्लो" : "Previous",
+    next: isNepali ? "अर्को" : "Next",
+    morePages: isNepali ? "थप पृष्ठहरू" : "More pages",
+    goPrevious: isNepali ? "अघिल्लो पृष्ठमा जानुहोस्" : "Go to previous page",
+    goNext: isNepali ? "अर्को पृष्ठमा जानुहोस्" : "Go to next page",
+  };
+}
 
 const Pagination = ({ className, ...props }: React.ComponentProps<"nav">) => (
   <nav
@@ -69,46 +84,55 @@ PaginationLink.displayName = "PaginationLink";
 const PaginationPrevious = ({
   className,
   ...props
-}: React.ComponentProps<typeof PaginationLink>) => (
-  <PaginationLink
-    aria-label="Go to previous page"
-    className={cn("gap-1 pl-2.5 w-auto px-3", className)}
-    {...props}
-  >
-    <ChevronLeft className="h-4 w-4" />
-    <span>Previous</span>
-  </PaginationLink>
-);
+}: React.ComponentProps<typeof PaginationLink>) => {
+  const labels = usePaginationLabels();
+  return (
+    <PaginationLink
+      aria-label={labels.goPrevious}
+      className={cn("gap-1 pl-2.5 w-auto px-3", className)}
+      {...props}
+    >
+      <ChevronLeft className="h-4 w-4" />
+      <span>{labels.previous}</span>
+    </PaginationLink>
+  );
+};
 PaginationPrevious.displayName = "PaginationPrevious";
 
 const PaginationNext = ({
   className,
   ...props
-}: React.ComponentProps<typeof PaginationLink>) => (
-  <PaginationLink
-    aria-label="Go to next page"
-    className={cn("gap-1 pr-2.5 w-auto px-3", className)}
-    {...props}
-  >
-    <span>Next</span>
-    <ChevronRight className="h-4 w-4" />
-  </PaginationLink>
-);
+}: React.ComponentProps<typeof PaginationLink>) => {
+  const labels = usePaginationLabels();
+  return (
+    <PaginationLink
+      aria-label={labels.goNext}
+      className={cn("gap-1 pr-2.5 w-auto px-3", className)}
+      {...props}
+    >
+      <span>{labels.next}</span>
+      <ChevronRight className="h-4 w-4" />
+    </PaginationLink>
+  );
+};
 PaginationNext.displayName = "PaginationNext";
 
 const PaginationEllipsis = ({
   className,
   ...props
-}: React.ComponentProps<"span">) => (
-  <span
-    aria-hidden
-    className={cn("flex h-9 w-9 items-center justify-center", className)}
-    {...props}
-  >
-    <MoreHorizontal className="h-4 w-4" />
-    <span className="sr-only">More pages</span>
-  </span>
-);
+}: React.ComponentProps<"span">) => {
+  const labels = usePaginationLabels();
+  return (
+    <span
+      aria-hidden
+      className={cn("flex h-9 w-9 items-center justify-center", className)}
+      {...props}
+    >
+      <MoreHorizontal className="h-4 w-4" />
+      <span className="sr-only">{labels.morePages}</span>
+    </span>
+  );
+};
 PaginationEllipsis.displayName = "PaginationEllipsis";
 
 export {

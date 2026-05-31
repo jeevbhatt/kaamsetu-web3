@@ -11,7 +11,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useWorker } from "../hooks";
-import { isSupabaseConfigured } from "../lib";
+import { isSupabaseConfigured, translateError } from "../lib";
 import type { WorkerDisplay } from "@shram-sewa/shared";
 
 export default function WorkerPage() {
@@ -61,8 +61,9 @@ export default function WorkerPage() {
   }
 
   if (workerQuery.error || !workerQuery.data) {
-    const errorMessage =
-      workerQuery.error instanceof Error ? workerQuery.error.message : null;
+    const errorMessage = workerQuery.error
+      ? translateError(workerQuery.error, { isNepali, context: "generic" })
+      : null;
 
     return (
       <div className="max-w-2xl mx-auto space-y-4">
@@ -151,12 +152,23 @@ export default function WorkerPage() {
             </div>
 
             <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
                 <h1 className="text-2xl font-bold text-mountain-900">
                   {workerName}
                 </h1>
                 {worker.isApproved && (
-                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <Badge
+                    variant="success"
+                    className="inline-flex items-center gap-1"
+                    title={
+                      isNepali
+                        ? "श्रम सेवाद्वारा प्रमाणित"
+                        : "Verified by Shram Sewa"
+                    }
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    {isNepali ? "प्रमाणित" : "Verified"}
+                  </Badge>
                 )}
               </div>
 

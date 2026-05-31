@@ -5,8 +5,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useUIStore, useAuthStore } from "../store";
 import { Button, Card, CardContent, Input } from "../components/ui";
-import { Phone, ArrowRight, Shield } from "lucide-react";
-import { isSupabaseConfigured } from "../lib";
+import { Phone, ArrowRight, Shield, Mail, CheckCircle2 } from "lucide-react";
+import { isSupabaseConfigured, translateError } from "../lib";
+import { authApi } from "@shram-sewa/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 // Three distinct sub-forms (phone, OTP, email), each gets its own schema
@@ -31,9 +32,15 @@ const emailLoginSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
+// Email magic-link fallback: just an email, no password.
+const emailLinkSchema = z.object({
+  email: z.string().email("Invalid email address"),
+});
+
 type PhoneFormValues = z.input<typeof phoneSchema>;
 type OtpFormValues = z.input<typeof otpSchema>;
 type EmailFormValues = z.input<typeof emailLoginSchema>;
+type EmailLinkFormValues = z.input<typeof emailLinkSchema>;
 
 // Lightweight EN→NE translation for the Zod messages this form raises.
 // When react-i18next adoption lands (Week 3), this collapses into a key
@@ -65,10 +72,12 @@ export default function LoginPage() {
   const backendConfigured = isSupabaseConfigured();
 
   const [authMethod, setAuthMethod] = useState<"phone" | "email">("phone");
-  const [step, setStep] = useState<"phone" | "otp">("phone");
+  // "email-link" is the SMS-failure escape hatch: a magic link sent to email.
+  const [step, setStep] = useState<"phone" | "otp" | "email-link">("phone");
   const [isLoading, setIsLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [phoneE164, setPhoneE164] = useState(""); // captured between steps
+  const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
 
   const phoneForm = useForm<PhoneFormValues>({
     resolver: zodResolver(phoneSchema),
@@ -86,6 +95,12 @@ export default function LoginPage() {
     resolver: zodResolver(emailLoginSchema),
     mode: "onTouched",
     defaultValues: { email: "", password: "" },
+  });
+
+  const emailLinkForm = useForm<EmailLinkFormValues>({
+    resolver: zodResolver(emailLinkSchema),
+    mode: "onTouched",
+    defaultValues: { email: "" },
   });
 
   const ensureBackend = (): boolean => {
@@ -174,6 +189,33 @@ export default function LoginPage() {
     navigate({ to: "/profile" });
   };
 
+  // SMS-failure escape hatch. Sends a one-click sign-in link to the user's
+  // email so they can get in even if no SMS provider could deliver the code.
+  const handleSendMagicLink = async (values: EmailLinkFormValues) => {
+    setSubmitError("");
+    if (!ensureBackend()) return;
+
+    setIsLoading(true);
+    try {
+      await authApi.requestEmailMagicLink(
+        values.email,
+        `${window.location.origin}/profile`,
+      );
+      setMagicLinkSentTo(values.email);
+    } catch (error) {
+      setSubmitError(translateError(error, { isNepali, context: "login" }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const switchToEmailLink = () => {
+    setStep("email-link");
+    setSubmitError("");
+    setMagicLinkSentTo(null);
+    emailLinkForm.reset();
+  };
+
   const switchToEmail = () => {
     setAuthMethod("email");
     setSubmitError("");
@@ -185,12 +227,14 @@ export default function LoginPage() {
     setAuthMethod("phone");
     setStep("phone");
     setSubmitError("");
+    setMagicLinkSentTo(null);
     emailForm.reset();
   };
 
   const backToPhoneStep = () => {
     setStep("phone");
     setSubmitError("");
+    setMagicLinkSentTo(null);
     otpForm.reset();
   };
 
@@ -388,7 +432,7 @@ export default function LoginPage() {
                 )}
               </Button>
             </form>
-          ) : (
+          ) : step === "otp" ? (
             <form
               onSubmit={otpForm.handleSubmit(handleVerifyOtp)}
               noValidate
@@ -446,7 +490,113 @@ export default function LoginPage() {
               >
                 {isNepali ? "नम्बर बदल्नुहोस्" : "Change number"}
               </button>
+
+              {/* SMS-failure escape hatch: if the code never arrives (Sparrow
+                  + Twilio both failed, or carrier filtered it), let the user
+                  sign in via an email magic link instead. */}
+              <div className="pt-2 border-t border-terrain-200 text-center">
+                <p className="text-xs text-terrain-500 mb-1.5">
+                  {isNepali
+                    ? "कोड आएन?"
+                    : "Didn't get the code?"}
+                </p>
+                <button
+                  type="button"
+                  onClick={switchToEmailLink}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-crimson-700 hover:text-crimson-800"
+                >
+                  <Mail className="w-4 h-4" />
+                  {isNepali
+                    ? "इमेल लिंक मार्फत साइन इन गर्नुहोस्"
+                    : "Sign in with an email link"}
+                </button>
+              </div>
             </form>
+          ) : (
+            /* ── email-link step (SMS fallback) ── */
+            magicLinkSentTo ? (
+              <div className="text-center space-y-3 py-2">
+                <div className="mx-auto w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                </div>
+                <h2 className="text-lg font-semibold text-mountain-900">
+                  {isNepali ? "इमेल जाँच गर्नुहोस्" : "Check your email"}
+                </h2>
+                <p className="text-sm text-terrain-500">
+                  {isNepali
+                    ? `हामीले ${magicLinkSentTo} मा साइन-इन लिंक पठायौं। लिंकमा क्लिक गरी साइन इन गर्नुहोस्।`
+                    : `We sent a sign-in link to ${magicLinkSentTo}. Click it to sign in.`}
+                </p>
+                <button
+                  type="button"
+                  onClick={backToPhoneStep}
+                  className="text-sm text-terrain-500 hover:text-mountain-900"
+                >
+                  {isNepali ? "मोबाइलमा फर्कनुहोस्" : "Back to mobile login"}
+                </button>
+              </div>
+            ) : (
+              <form
+                onSubmit={emailLinkForm.handleSubmit(handleSendMagicLink)}
+                noValidate
+                className="space-y-4"
+              >
+                <p className="text-sm text-terrain-500">
+                  {isNepali
+                    ? "तपाईंको इमेल प्रविष्ट गर्नुहोस्। हामी एक-क्लिक साइन-इन लिंक पठाउनेछौं।"
+                    : "Enter your email and we'll send you a one-click sign-in link."}
+                </p>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">
+                    <Mail className="w-4 h-4 inline mr-1" />
+                    {isNepali ? "इमेल" : "Email"}
+                  </label>
+                  <Input
+                    type="email"
+                    placeholder="user@example.com"
+                    autoFocus
+                    autoComplete="email"
+                    {...emailLinkForm.register("email")}
+                  />
+                  {localizeError(
+                    emailLinkForm.formState.errors.email?.message,
+                    isNepali,
+                  ) && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {localizeError(
+                        emailLinkForm.formState.errors.email?.message,
+                        isNepali,
+                      )}
+                    </p>
+                  )}
+                </div>
+                {submitError && (
+                  <p className="text-sm text-red-600">{submitError}</p>
+                )}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={
+                    isLoading ||
+                    !backendConfigured ||
+                    emailLinkForm.formState.isSubmitting
+                  }
+                >
+                  {isLoading
+                    ? "..."
+                    : isNepali
+                      ? "साइन-इन लिंक पठाउनुहोस्"
+                      : "Send sign-in link"}
+                </Button>
+                <button
+                  type="button"
+                  onClick={backToPhoneStep}
+                  className="w-full text-sm text-terrain-500"
+                >
+                  {isNepali ? "मोबाइलमा फर्कनुहोस्" : "Back to mobile login"}
+                </button>
+              </form>
+            )
           )}
         </CardContent>
       </Card>

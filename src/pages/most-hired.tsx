@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Trophy, Users, CheckCircle2, AlertTriangle } from "lucide-react";
 import type { WorkerDisplay } from "@shram-sewa/shared";
 import { useMostHiredWorkers } from "../hooks";
-import { isSupabaseConfigured } from "../lib";
+import { isSupabaseConfigured, translateError } from "../lib";
 import { useUIStore } from "../store";
 import { WorkerCard } from "../components/WorkerCard";
 import { WorkerCardSkeleton } from "../components/LoadingSkeleton";
@@ -13,11 +13,20 @@ function RankedWorkerCard({
   worker,
   rank,
   isNepali,
+  // showRanking is false on day one (no worker has any hires yet) — we then
+  // hide the "#N" rank pill and the "0 hires" badge, which otherwise read as
+  // a broken/arbitrary leaderboard. The cards still render so the page stays
+  // useful as a "workers available now" list.
+  showRanking,
 }: {
   worker: WorkerDisplay;
   rank: number;
   isNepali: boolean;
+  showRanking: boolean;
 }) {
+  if (!showRanking) {
+    return <WorkerCard worker={worker} />;
+  }
   return (
     <div className="relative">
       <span className="absolute -top-2 -left-2 z-10 rounded-full bg-crimson-700 text-white text-xs font-semibold px-2.5 py-1 shadow-sm">
@@ -48,10 +57,16 @@ export default function MostHiredPage() {
     [topWorkersQuery.data],
   );
 
-  const rankedWorkers = useMemo(() => {
-    const withHires = workers.filter((worker) => worker.totalHires > 0);
-    return withHires.length > 0 ? withHires : workers;
-  }, [workers]);
+  // Workers that have actually been hired — the real leaderboard.
+  const workersWithHires = useMemo(
+    () => workers.filter((worker) => worker.totalHires > 0),
+    [workers],
+  );
+  // True ranking exists only once someone has ≥1 hire. Before that we still
+  // show workers (so the page isn't empty) but as a plain "available now"
+  // list without misleading rank/hire badges.
+  const hasRealRanking = workersWithHires.length > 0;
+  const rankedWorkers = hasRealRanking ? workersWithHires : workers;
 
   const totalHires = useMemo(
     () => rankedWorkers.reduce((sum, worker) => sum + worker.totalHires, 0),
@@ -62,12 +77,11 @@ export default function MostHiredPage() {
     backendConfigured &&
     (topWorkersQuery.isLoading || topWorkersQuery.isFetching);
   const queryError = topWorkersQuery.error;
-  const queryErrorMessage =
-    queryError instanceof Error
-      ? queryError.message
-      : isNepali
-        ? "सूची लोड गर्न समस्या भयो"
-        : "Unable to load top workers";
+  const queryErrorMessage = queryError
+    ? translateError(queryError, { isNepali, context: "generic" })
+    : isNepali
+      ? "सूची लोड गर्न समस्या भयो"
+      : "Unable to load top workers";
 
   return (
     <div className="space-y-8">
@@ -153,7 +167,13 @@ export default function MostHiredPage() {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-mountain-900">
-              {isNepali ? "शीर्ष कामदारहरू" : "Top workers"}
+              {hasRealRanking
+                ? isNepali
+                  ? "शीर्ष कामदारहरू"
+                  : "Top workers"
+                : isNepali
+                  ? "उपलब्ध कामदारहरू"
+                  : "Available workers"}
             </h2>
             {availableOnly && (
               <Badge variant="success">
@@ -161,6 +181,19 @@ export default function MostHiredPage() {
               </Badge>
             )}
           </div>
+
+          {/* Honest framing when nobody has been hired yet (day one): the
+              cards below are NOT a leaderboard, so don't pretend otherwise. */}
+          {!isLoading && !hasRealRanking && rankedWorkers.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-terrain-200 bg-terrain-50 p-3 text-sm text-terrain-600">
+              <Trophy className="w-4 h-4 mt-0.5 text-gold-500 flex-shrink-0" />
+              <span>
+                {isNepali
+                  ? "अहिलेसम्म कुनै भाडा रेकर्ड छैन — तल उपलब्ध कामदारहरू देखाइएको छ। कामदारहरू भाडामा लिइएपछि यो सूची क्रमबद्ध हुनेछ।"
+                  : "No hires recorded yet — showing available workers below. This list becomes a ranking once workers start getting hired."}
+              </span>
+            </div>
+          )}
 
           {isLoading ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -176,6 +209,7 @@ export default function MostHiredPage() {
                   worker={worker}
                   rank={index + 1}
                   isNepali={isNepali}
+                  showRanking={hasRealRanking}
                 />
               ))}
             </div>

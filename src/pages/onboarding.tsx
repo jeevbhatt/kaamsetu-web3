@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, Button, Input, Progress } from "../components/ui";
 import { User, Briefcase, MapPin, ChevronRight, Check } from "lucide-react";
 import { useJobCategories, useLocalUnits } from "../hooks";
+import { translateError } from "../lib";
 import { useState } from "react";
 
 // ─── Onboarding form schema ────────────────────────────────────────────
@@ -233,13 +234,11 @@ export default function OnboardingPage() {
       await initialize();
       navigate({ to: "/profile", replace: true });
     } catch (err) {
-      setSubmitError(
-        err instanceof Error
-          ? err.message
-          : isNepali
-            ? "सेटअप गर्न समस्या भयो।"
-            : "An error occurred during setup.",
-      );
+      // Friendly, code-free message. context: "register" turns a
+      // unique-constraint violation (worker already registered) into
+      // "You are already registered as a worker…" instead of a raw
+      // Postgres 23505 string.
+      setSubmitError(translateError(err, { isNepali, context: "register" }));
     } finally {
       setIsSubmitting(false);
     }

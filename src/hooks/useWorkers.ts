@@ -55,7 +55,7 @@ async function fetchWorkers(filters: WorkerFilters, page: number): Promise<{ dat
       district:districts(name_en, name_np),
       local_unit:local_units(name_en, name_np, unit_type)
     `, { count: "exact" })
-    .eq("is_approved", true)
+    // Self-serve: visibility enforced by RLS (active user), not is_approved.
     .range(from, to)
     .order("created_at", { ascending: false });
 
@@ -131,9 +131,11 @@ export function useWorkerCount() {
       const supabase = getSupabaseSafe();
       if (!supabase) return { total: 0, available: 0 };
 
+      // Counts reflect publicly-visible workers. RLS already restricts to
+      // active-user profiles; no is_approved filter (self-serve model).
       const [totalRes, availRes] = await Promise.all([
-        supabase.from("worker_profiles").select("id", { count: "exact", head: true }).eq("is_approved", true),
-        supabase.from("worker_profiles").select("id", { count: "exact", head: true }).eq("is_approved", true).eq("is_available", true),
+        supabase.from("worker_profiles").select("id", { count: "exact", head: true }),
+        supabase.from("worker_profiles").select("id", { count: "exact", head: true }).eq("is_available", true),
       ]);
 
       return {

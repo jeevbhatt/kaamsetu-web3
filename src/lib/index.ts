@@ -10,3 +10,5 @@ export {
   hasHireIpLock,
   setHireIpLock,
 } from "./security";
+export { translateError } from "./error-messages";
+export type { TranslateOptions } from "./error-messages";

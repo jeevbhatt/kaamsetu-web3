@@ -14,7 +14,8 @@ import {
   useReducedMotion,
   type Variants,
 } from "framer-motion";
-import { Home, Search, UserRound } from "lucide-react";
+import { Home, Search, Trophy, UserRound, Compass } from "lucide-react";
+import { Button } from "./components/ui";
 import { useUIStore } from "./store";
 import { useAuthStore } from "./store/auth-store";
 import { Header } from "./components/Header";
@@ -83,8 +84,59 @@ const reducedMotionVariants: Variants = {
   },
 };
 
+// 404 page. Rendered inside RootLayout's <Outlet/> by TanStack Router's
+// defaultNotFoundComponent, so the header, footer, and bottom nav stay
+// visible — the user is never stranded on a blank page. Router-aware
+// (uses <Link>) and bilingual via the UI store.
+function NotFoundPage() {
+  const locale = useUIStore((state) => state.locale);
+  const isNepali = locale === "ne";
+
+  return (
+    <motion.div
+      className="max-w-md mx-auto text-center py-16 px-4"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      <div className="mx-auto w-16 h-16 rounded-2xl bg-crimson-50 flex items-center justify-center mb-6">
+        <Compass className="w-8 h-8 text-crimson-700" />
+      </div>
+      <p className="text-5xl font-display font-bold text-mountain-900 mb-2">
+        404
+      </p>
+      <h1 className="text-xl font-semibold text-mountain-900 mb-2">
+        {isNepali ? "पृष्ठ फेला परेन" : "Page not found"}
+      </h1>
+      <p className="text-terrain-500 mb-8">
+        {isNepali
+          ? "तपाईंले खोज्नुभएको पृष्ठ अवस्थित छैन वा सारिएको हुन सक्छ।"
+          : "The page you're looking for doesn't exist or may have moved."}
+      </p>
+      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <Link to="/" preload="intent">
+          <Button className="rounded-full w-full sm:w-auto gap-2">
+            <Home className="w-4 h-4" />
+            {isNepali ? "गृह पृष्ठ" : "Go home"}
+          </Button>
+        </Link>
+        <Link to="/search" preload="intent">
+          <Button
+            variant="outline"
+            className="rounded-full w-full sm:w-auto gap-2"
+          >
+            <Search className="w-4 h-4" />
+            {isNepali ? "कामदार खोज्नुहोस्" : "Find workers"}
+          </Button>
+        </Link>
+      </div>
+    </motion.div>
+  );
+}
+
 // Loading fallback with animation
 function PageLoader() {
+  const isNepali = useUIStore((state) => state.locale === "ne");
   return (
     <motion.div
       className="flex items-center justify-center min-h-[45vh]"
@@ -94,7 +146,9 @@ function PageLoader() {
     >
       <div className="glass-panel rounded-2xl px-5 py-4 flex items-center gap-3">
         <div className="animate-spin rounded-full h-6 w-6 border-2 border-crimson-200 border-b-crimson-700" />
-        <span className="text-sm text-mountain-700">Loading</span>
+        <span className="text-sm text-mountain-700">
+          {isNepali ? "लोड हुँदै..." : "Loading"}
+        </span>
       </div>
     </motion.div>
   );
@@ -163,7 +217,7 @@ function RootLayout() {
       <Footer />
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-terrain-200 bg-white/95 backdrop-blur px-3 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-1">
           {[
             {
               to: "/",
@@ -174,6 +228,11 @@ function RootLayout() {
               to: "/search",
               label: locale === "ne" ? "खोज" : "Search",
               icon: Search,
+            },
+            {
+              to: "/most-hired",
+              label: locale === "ne" ? "शीर्ष" : "Top",
+              icon: Trophy,
             },
             {
               to: "/profile",
@@ -416,7 +475,11 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 // Create router
-export const router = createRouter({ routeTree });
+export const router = createRouter({
+  routeTree,
+  // Any unmatched URL renders the 404 inside RootLayout's <Outlet/>.
+  defaultNotFoundComponent: NotFoundPage,
+});
 
 // Type declaration for type-safe routing
 declare module "@tanstack/react-router" {

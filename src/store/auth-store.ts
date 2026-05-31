@@ -7,6 +7,7 @@ import { create } from "zustand";
 import type { User, AuthSession } from "@shram-sewa/shared";
 import { authApi } from "@shram-sewa/shared";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib";
+import { setUserContext } from "../lib/sentry";
 
 type SupabaseSessionLike = {
   access_token?: string;
@@ -264,6 +265,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         isLoading: false,
         authError: null,
       });
+      // Attribute Sentry errors to the signed-in user (id only — no PII).
+      // No-op when Sentry isn't configured.
+      setUserContext(liveSession?.user ? { id: liveSession.user.id } : null);
 
       if (!authListenerBound) {
         authApi.onAuthStateChange((_event, session) => {
@@ -275,6 +279,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             isLoading: false,
             authError: null,
           });
+          // Covers every later transition: SIGNED_IN / SIGNED_OUT /
+          // TOKEN_REFRESHED. Clears the user on sign-out.
+          setUserContext(
+            nextSession?.user ? { id: nextSession.user.id } : null,
+          );
         });
         authListenerBound = true;
       }
