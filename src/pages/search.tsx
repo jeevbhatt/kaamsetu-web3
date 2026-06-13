@@ -2,6 +2,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
 } from "react";
@@ -126,6 +127,10 @@ export default function SearchPage() {
     parsePageParam(new URLSearchParams(window.location.search).get("page")),
   );
   const [showFilters, setShowFilters] = useState(false);
+  // Refs for click-outside dismissal of the filter panel (mobile UX: tapping
+  // anywhere outside the panel or its toggle button collapses it).
+  const filterPanelRef = useRef<HTMLDivElement>(null);
+  const filterToggleRef = useRef<HTMLButtonElement>(null);
   const [selectedWorker, setSelectedWorker] = useState<WorkerDisplay | null>(
     null,
   );
@@ -136,6 +141,29 @@ export default function SearchPage() {
   const [isPendingTransition, startTransition] = useTransition();
 
   const toast = useToast();
+
+  // Close the filter panel when tapping/clicking outside it (and outside the
+  // toggle, so the toggle still works as a toggle). Only active while open.
+  useEffect(() => {
+    if (!showFilters) return;
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      if (
+        filterPanelRef.current?.contains(target) ||
+        filterToggleRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowFilters(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [showFilters]);
+
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 160);
   const deferredSearchQuery = useDeferredValue(debouncedSearchQuery);
   const isSearching = debouncedSearchQuery.trim().length > 0;
@@ -409,6 +437,7 @@ export default function SearchPage() {
           />
         </div>
         <Button
+          ref={filterToggleRef}
           variant={showFilters ? "default" : "outline"}
           onClick={() => setShowFilters(!showFilters)}
           className="gap-2"
@@ -427,6 +456,7 @@ export default function SearchPage() {
       <AnimatePresence initial={false}>
         {showFilters && (
           <motion.div
+            ref={filterPanelRef}
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
             exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}

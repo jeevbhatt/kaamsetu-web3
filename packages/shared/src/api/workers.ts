@@ -17,9 +17,23 @@ export interface WorkerFilters {
   minRating?: number;
   maxDailyRate?: number;
   search?: string;
-  sortBy?: "created_at" | "total_hires" | "avg_rating";
+  // Server-side ordering. Used by the "Most Hired" listing to rank by
+  // total_hires; defaults to newest-first when unset.
+  sortBy?: "total_hires" | "avg_rating" | "daily_rate_npr" | "created_at";
   sortDirection?: "asc" | "desc";
 }
+
+// Whitelist of columns the client is allowed to sort by — prevents an
+// arbitrary string from reaching the query builder.
+const SORTABLE_COLUMNS: Record<
+  NonNullable<WorkerFilters["sortBy"]>,
+  string
+> = {
+  total_hires: "total_hires",
+  avg_rating: "avg_rating",
+  daily_rate_npr: "daily_rate_npr",
+  created_at: "created_at",
+};
 
 type WorkerRelation = {
   user?:
@@ -181,7 +195,8 @@ export const workersApi = {
       `,
         { count: "exact" },
       )
-      .eq("is_approved", true)
+      // Self-serve model: visibility is enforced by RLS (owning user must be
+      // active), NOT by is_approved. is_approved is only a "Verified" badge.
       .range(from, to);
 
     if (filters.isAvailable !== undefined) {
@@ -207,20 +222,14 @@ export const workersApi = {
       query = query.ilike("about", s);
     }
 
-    const sortDirection = filters.sortDirection === "asc";
-    if (filters.sortBy === "total_hires") {
-      query = query
-        .order("total_hires", { ascending: sortDirection })
-        .order("avg_rating", { ascending: false })
-        .order("created_at", { ascending: false });
-    } else if (filters.sortBy === "avg_rating") {
-      query = query
-        .order("avg_rating", { ascending: sortDirection })
-        .order("total_hires", { ascending: false })
-        .order("created_at", { ascending: false });
-    } else {
-      query = query.order("created_at", { ascending: false });
-    }
+    // Ordering: validated against the whitelist so only known columns
+    // reach the query. Default = newest worker first. The "Most Hired"
+    // page passes sortBy: "total_hires", sortDirection: "desc".
+    const sortColumn = filters.sortBy
+      ? SORTABLE_COLUMNS[filters.sortBy]
+      : "created_at";
+    const ascending = filters.sortDirection === "asc";
+    query = query.order(sortColumn, { ascending, nullsFirst: false });
 
     const { data, error, count } = await query;
     if (error) throw error;

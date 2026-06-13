@@ -10,6 +10,7 @@ import {
   useMarkAllNotificationsAsReadMutation,
   useMyWorkerProfile,
   useIncomingHires,
+  useWorkerProfileUpdateMutation,
 } from "../hooks";
 import {
   User,
@@ -19,11 +20,13 @@ import {
   Briefcase,
   CheckCircle,
   Clock,
+  Globe,
+  Power,
 } from "lucide-react";
 import type { HireRecord } from "@shram-sewa/shared";
 
 export default function ProfilePage() {
-  const { locale } = useUIStore();
+  const { locale, toggleLocale } = useUIStore();
   const { user, isAuthenticated, logout } = useAuthStore();
   const isNepali = locale === "ne";
   const hiresQuery = useMyHires(isAuthenticated);
@@ -31,6 +34,21 @@ export default function ProfilePage() {
   const updateHireStatus = useUpdateHireStatusMutation();
   const markRead = useMarkNotificationAsReadMutation();
   const markAllRead = useMarkAllNotificationsAsReadMutation();
+  const updateWorkerProfile = useWorkerProfileUpdateMutation();
+
+  // Display name with Nepali fallback (matches WorkerCard logic).
+  const displayName = (() => {
+    if (!user) return "User";
+    if (isNepali) return user.fullNameNp || user.fullName || "प्रयोगकर्ता";
+    return user.fullName || user.fullNameNp || "User";
+  })();
+
+  const roleLabel = (role?: string) => {
+    if (role === "worker") return isNepali ? "कामदार" : "Worker";
+    if (role === "hirer") return isNepali ? "रोजगारदाता" : "Hirer";
+    if (role === "admin") return isNepali ? "प्रशासक" : "Admin";
+    return role ?? "";
+  };
 
   // Worker-side: only fetched when the role is "worker". When the user is
   // a hirer or hasn't completed worker onboarding, the profile query
@@ -145,16 +163,18 @@ export default function ProfilePage() {
             </div>
             <div className="flex-1">
               <h1 className="text-xl font-bold text-mountain-900">
-                {user?.fullName || "User"}
+                {displayName}
               </h1>
               <p className="text-terrain-500">{user?.phone}</p>
               <Badge variant="secondary" className="mt-1">
-                {user?.role}
+                {roleLabel(user?.role)}
               </Badge>
             </div>
-            <Button variant="outline" size="icon">
-              <Settings className="w-5 h-5" />
-            </Button>
+            <a href="#settings" aria-label={isNepali ? "सेटिङ" : "Settings"}>
+              <Button variant="outline" size="icon">
+                <Settings className="w-5 h-5" />
+              </Button>
+            </a>
           </div>
         </CardContent>
       </Card>
@@ -403,16 +423,107 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      <Button
-        variant="outline"
-        className="w-full text-red-600"
-        onClick={() => {
-          void logout();
-        }}
-      >
-        <LogOut className="w-4 h-4 mr-2" />
-        {isNepali ? "लगआउट" : "Logout"}
-      </Button>
+      {/* ── Settings ── reachable from the header gear (anchor #settings) */}
+      <Card id="settings" className="scroll-mt-20">
+        <CardContent className="p-6">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Settings className="w-5 h-5 text-mountain-700" />
+            {isNepali ? "सेटिङ" : "Settings"}
+          </h2>
+
+          <div className="divide-y divide-terrain-200">
+            {/* Language */}
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-3">
+                <Globe className="w-5 h-5 text-crimson-700" />
+                <div>
+                  <div className="font-medium text-mountain-900">
+                    {isNepali ? "भाषा" : "Language"}
+                  </div>
+                  <div className="text-sm text-terrain-500">
+                    {isNepali ? "नेपाली" : "English"}
+                  </div>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={toggleLocale}>
+                {isNepali ? "Switch to English" : "नेपालीमा बदल्नुहोस्"}
+              </Button>
+            </div>
+
+            {/* Worker availability toggle */}
+            {isWorker && myWorkerProfile.data && (
+              <div className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-3">
+                  <Power
+                    className={`w-5 h-5 ${
+                      myWorkerProfile.data.isAvailable
+                        ? "text-emerald-600"
+                        : "text-terrain-400"
+                    }`}
+                  />
+                  <div>
+                    <div className="font-medium text-mountain-900">
+                      {isNepali ? "काम उपलब्धता" : "Work availability"}
+                    </div>
+                    <div className="text-sm text-terrain-500">
+                      {myWorkerProfile.data.isAvailable
+                        ? isNepali
+                          ? "तपाईं अहिले उपलब्ध हुनुहुन्छ"
+                          : "You're currently available"
+                        : isNepali
+                          ? "तपाईं अहिले अनुपलब्ध हुनुहुन्छ"
+                          : "You're currently unavailable"}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  variant={
+                    myWorkerProfile.data.isAvailable ? "outline" : "default"
+                  }
+                  size="sm"
+                  disabled={updateWorkerProfile.isPending}
+                  onClick={() => {
+                    const profile = myWorkerProfile.data;
+                    if (!profile) return;
+                    void updateWorkerProfile.mutateAsync({
+                      profileId: profile.id,
+                      patch: { isAvailable: !profile.isAvailable },
+                    });
+                  }}
+                >
+                  {myWorkerProfile.data.isAvailable
+                    ? isNepali
+                      ? "अनुपलब्ध गर्नुहोस्"
+                      : "Go unavailable"
+                    : isNepali
+                      ? "उपलब्ध गर्नुहोस्"
+                      : "Go available"}
+                </Button>
+              </div>
+            )}
+
+            {/* Logout */}
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-3">
+                <LogOut className="w-5 h-5 text-red-600" />
+                <div className="font-medium text-mountain-900">
+                  {isNepali ? "लगआउट" : "Logout"}
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600"
+                onClick={() => {
+                  void logout();
+                }}
+              >
+                {isNepali ? "लगआउट" : "Logout"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -187,6 +187,36 @@ async function signInWithEmailPassword(params: {
   }
 }
 
+// Result of an email registration attempt:
+//  - "session": account created AND signed in (email confirmation off).
+//  - "confirm": account created but the user must click the email link
+//    before they can sign in (email confirmation on).
+//  - "error": failed (e.g. email already registered).
+type RegisterResult =
+  | { kind: "session" }
+  | { kind: "confirm" }
+  | { kind: "error"; message: string };
+
+async function signUpWithEmailPassword(params: {
+  email: string;
+  password: string;
+  redirectTo?: string;
+}): Promise<RegisterResult> {
+  try {
+    const result = await authApi.signUpWithPassword(
+      params.email,
+      params.password,
+      params.redirectTo,
+    );
+    const session = mapSupabaseSession(result.session);
+    return session ? { kind: "session" } : { kind: "confirm" };
+  } catch (error) {
+    const detail = describeAuthError(error);
+    console.error("[auth] Email sign-up failed", detail);
+    return { kind: "error", message: detail.userMessage };
+  }
+}
+
 interface AuthState {
   // State
   user: User | null;
@@ -202,6 +232,11 @@ interface AuthState {
   initialize: () => Promise<void>;
   login: (phone: string, otp?: string) => Promise<boolean>;
   loginWithEmail: (email: string, password: string) => Promise<boolean>;
+  registerWithEmail: (
+    email: string,
+    password: string,
+    redirectTo?: string,
+  ) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   isProfileComplete: () => boolean;
 }
@@ -406,6 +441,49 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             : "Login failed. Please try again.",
       });
       return false;
+    }
+  },
+
+  registerWithEmail: async (
+    email: string,
+    password: string,
+    redirectTo?: string,
+  ): Promise<RegisterResult> => {
+    set({ isLoading: true });
+    try {
+      if (!isSupabaseConfigured()) {
+        set({ isLoading: false });
+        return { kind: "error", message: "Sign-up is currently unavailable." };
+      }
+      getSupabaseClient();
+      const result = await signUpWithEmailPassword({
+        email,
+        password,
+        redirectTo,
+      });
+
+      // When a session came back, the account is created AND signed in —
+      // reflect that in the store so the app is immediately authenticated.
+      if (result.kind === "session") {
+        const liveSession = mapSupabaseSession(await authApi.getSession());
+        set({
+          user: liveSession?.user ?? null,
+          session: liveSession,
+          isAuthenticated: !!liveSession,
+          isLoading: false,
+          authError: null,
+        });
+      } else {
+        set({ isLoading: false });
+      }
+      return result;
+    } catch (err) {
+      set({ isLoading: false });
+      return {
+        kind: "error",
+        message:
+          err instanceof Error ? err.message : "Sign-up failed. Try again.",
+      };
     }
   },
 

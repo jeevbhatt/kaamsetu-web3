@@ -5,8 +5,11 @@ import {
   Outlet,
   Link,
   useRouterState,
+  useNavigate,
   redirect,
 } from "@tanstack/react-router";
+import { authApi } from "@shram-sewa/shared";
+import { getSupabaseSafe } from "./lib/supabase";
 import { lazy, Suspense, useEffect } from "react";
 import {
   motion,
@@ -38,6 +41,7 @@ const TermsPage = lazy(() => import("./pages/terms"));
 const GuidelinesPage = lazy(() => import("./pages/guidelines"));
 const ContactPage = lazy(() => import("./pages/contact"));
 const OnboardingPage = lazy(() => import("./pages/onboarding"));
+const ResetPasswordPage = lazy(() => import("./pages/reset-password"));
 
 // Page transition variants (from AGENTS.md section 9)
 const pageVariants: Variants = {
@@ -186,12 +190,36 @@ function RootLayout() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  const navigate = useNavigate();
 
   useNotificationsSubscription(isAuthenticated);
 
   useEffect(() => {
     void initializeAuth();
   }, [initializeAuth]);
+
+  // Global password-recovery handler. A reset link (from web OR Android,
+  // where the email lands on the configured Site URL with a recovery token)
+  // fires PASSWORD_RECOVERY once detectSessionInUrl exchanges the token.
+  // Route the user to /reset-password so they can set a new password,
+  // regardless of which page the link happened to open.
+  useEffect(() => {
+    // Ensure the client exists (also lets detectSessionInUrl exchange any
+    // recovery token in the URL hash). No-op / null if Supabase isn't set up.
+    if (!getSupabaseSafe()) return;
+    let unsub: (() => void) | undefined;
+    try {
+      const { data } = authApi.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY") {
+          void navigate({ to: "/reset-password" });
+        }
+      });
+      unsub = data?.subscription?.unsubscribe?.bind(data.subscription);
+    } catch {
+      /* backend unavailable — no recovery flow to handle */
+    }
+    return () => unsub?.();
+  }, [navigate]);
 
   useEffect(() => {
     const resolvedTheme =
@@ -311,6 +339,19 @@ async function requireProfile() {
     throw redirect({ to: "/onboarding" });
   }
 }
+
+// Public: the password-reset link must be reachable without an existing
+// session. detectSessionInUrl establishes a recovery session from the URL
+// hash, which the page itself reads — so no guard here.
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reset-password",
+  component: () => (
+    <Suspense fallback={<PageLoader />}>
+      <ResetPasswordPage />
+    </Suspense>
+  ),
+});
 
 // Define routes
 const indexRoute = createRoute({
@@ -465,6 +506,7 @@ const routeTree = rootRoute.addChildren([
   hireRoute,
   profileRoute,
   onboardingRoute,
+  resetPasswordRoute,
   loginRoute,
   howItWorksRoute,
   faqRoute,

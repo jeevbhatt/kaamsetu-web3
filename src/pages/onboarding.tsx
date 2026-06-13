@@ -15,6 +15,7 @@ import { Card, CardContent, Button, Input, Progress } from "../components/ui";
 import { User, Briefcase, MapPin, ChevronRight, Check } from "lucide-react";
 import { useJobCategories, useLocalUnits } from "../hooks";
 import { translateError } from "../lib";
+import { getSupabaseClient } from "../lib";
 import { useState } from "react";
 
 // ─── Onboarding form schema ────────────────────────────────────────────
@@ -35,6 +36,14 @@ const onboardingSchema = z
       .string()
       .min(2, "Name must be at least 2 characters")
       .max(100, "Name must not exceed 100 characters"),
+    // Optional Nepali (Devanagari) name. There's no reliable auto-
+    // transliteration of romanized names, so we let the user type it.
+    // When present, it's shown in Nepali locale; otherwise we fall back
+    // to the English name.
+    fullNameNp: z
+      .string()
+      .max(100, "Name must not exceed 100 characters")
+      .optional(),
     provinceId: z.coerce
       .number()
       .int()
@@ -135,6 +144,7 @@ export default function OnboardingPage() {
     defaultValues: {
       role: undefined,
       fullName: user?.fullName || "",
+      fullNameNp: user?.fullNameNp || "",
       provinceId: undefined,
       districtId: undefined,
       localUnitId: undefined,
@@ -206,13 +216,33 @@ export default function OnboardingPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. Update user metadata (name + role).
+      const fullNameNp = values.fullNameNp?.trim() || null;
+
+      // 1. Update auth user metadata (name + role).
       await authApi.updateUser({
         data: {
           full_name: values.fullName,
+          full_name_np: fullNameNp,
           role: values.role,
         },
       });
+
+      // 1b. Mirror the name into public.users — the worker-card join reads
+      //     from there, and the handle_new_user trigger only syncs on INSERT
+      //     (id/phone/role), so without this an onboarded worker's name and
+      //     Nepali name would never reach their public profile.
+      if (user?.id) {
+        const supabase = getSupabaseClient();
+        await (supabase as any)
+          .from("users")
+          .update({
+            full_name: values.fullName,
+            full_name_np: fullNameNp,
+            role: values.role,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", user.id);
+      }
 
       // 2. Worker-only: upsert worker_profiles row.
       if (values.role === "worker" && user?.id) {
@@ -346,6 +376,25 @@ export default function OnboardingPage() {
                   {localizeError(errors.fullName?.message, isNepali)}
                 </p>
               )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-mountain-900">
+                {isNepali ? "नाम (नेपालीमा)" : "Name in Nepali"}
+                <span className="ml-1 text-xs font-normal text-terrain-500">
+                  {isNepali ? "(वैकल्पिक)" : "(optional)"}
+                </span>
+              </label>
+              <Input
+                {...register("fullNameNp")}
+                placeholder="राम बहादुर"
+                lang="ne"
+              />
+              <p className="mt-1 text-xs text-terrain-500">
+                {isNepali
+                  ? "नेपाली भाषा छनोट गर्दा यो नाम देखिनेछ।"
+                  : "Shown when the app is set to Nepali."}
+              </p>
             </div>
 
             <div className="pt-4">

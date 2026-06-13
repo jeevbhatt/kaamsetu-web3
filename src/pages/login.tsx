@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, Link } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -78,6 +78,10 @@ export default function LoginPage() {
   const [submitError, setSubmitError] = useState("");
   const [phoneE164, setPhoneE164] = useState(""); // captured between steps
   const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
+  // Email tab sub-mode: sign in to an existing account, or register a new one.
+  const [emailMode, setEmailMode] = useState<"signin" | "register">("signin");
+  // Friendly info banner (e.g. "check your email to confirm" / reset sent).
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const phoneForm = useForm<PhoneFormValues>({
     resolver: zodResolver(phoneSchema),
@@ -189,6 +193,78 @@ export default function LoginPage() {
     navigate({ to: "/profile" });
   };
 
+  // Register a brand-new account with email + password. On success the
+  // requireProfile guard on /profile auto-routes them to /onboarding.
+  const handleEmailRegister = async (values: EmailFormValues) => {
+    setSubmitError("");
+    setInfoMessage(null);
+    if (!ensureBackend()) return;
+
+    setIsLoading(true);
+    const { registerWithEmail } = useAuthStore.getState();
+    const result = await registerWithEmail(
+      values.email,
+      values.password,
+      `${window.location.origin}/profile`,
+    );
+    setIsLoading(false);
+
+    if (result.kind === "session") {
+      navigate({ to: "/profile" });
+      return;
+    }
+    if (result.kind === "confirm") {
+      setInfoMessage(
+        isNepali
+          ? "खाता बनाइयो। साइन इन गर्न आफ्नो इमेलमा पठाइएको पुष्टिकरण लिंक क्लिक गर्नुहोस्।"
+          : "Account created. Check your email and click the confirmation link to sign in.",
+      );
+      return;
+    }
+    // kind === "error"
+    setSubmitError(
+      result.message ||
+        (isNepali
+          ? "दर्ता असफल भयो। पुन: प्रयास गर्नुहोस्।"
+          : "Registration failed. Please try again."),
+    );
+  };
+
+  // Forgot-password: emails a recovery link that lands on /reset-password,
+  // where the user sets a new password. Reuses the email already typed in
+  // the sign-in form.
+  const handleForgotPassword = async () => {
+    setSubmitError("");
+    setInfoMessage(null);
+    if (!ensureBackend()) return;
+
+    const email = emailForm.getValues("email").trim();
+    const emailOk = z.string().email().safeParse(email).success;
+    if (!emailOk) {
+      emailForm.setError("email", {
+        message: "Invalid email address",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await authApi.resetPassword(
+        email,
+        `${window.location.origin}/reset-password`,
+      );
+      setInfoMessage(
+        isNepali
+          ? `पासवर्ड रिसेट लिंक ${email} मा पठाइयो। आफ्नो इमेल जाँच गर्नुहोस्।`
+          : `Password reset link sent to ${email}. Please check your email.`,
+      );
+    } catch (error) {
+      setSubmitError(translateError(error, { isNepali, context: "login" }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // SMS-failure escape hatch. Sends a one-click sign-in link to the user's
   // email so they can get in even if no SMS provider could deliver the code.
   const handleSendMagicLink = async (values: EmailLinkFormValues) => {
@@ -212,6 +288,7 @@ export default function LoginPage() {
   const switchToEmailLink = () => {
     setStep("email-link");
     setSubmitError("");
+    setInfoMessage(null);
     setMagicLinkSentTo(null);
     emailLinkForm.reset();
   };
@@ -219,6 +296,7 @@ export default function LoginPage() {
   const switchToEmail = () => {
     setAuthMethod("email");
     setSubmitError("");
+    setInfoMessage(null);
     phoneForm.reset();
     otpForm.reset();
   };
@@ -227,13 +305,23 @@ export default function LoginPage() {
     setAuthMethod("phone");
     setStep("phone");
     setSubmitError("");
+    setInfoMessage(null);
     setMagicLinkSentTo(null);
     emailForm.reset();
+  };
+
+  // Toggle between the Email tab's "sign in" and "register" sub-modes.
+  const switchEmailMode = (mode: "signin" | "register") => {
+    setEmailMode(mode);
+    setSubmitError("");
+    setInfoMessage(null);
+    emailForm.clearErrors();
   };
 
   const backToPhoneStep = () => {
     setStep("phone");
     setSubmitError("");
+    setInfoMessage(null);
     setMagicLinkSentTo(null);
     otpForm.reset();
   };
@@ -302,72 +390,135 @@ export default function LoginPage() {
           )}
 
           {authMethod === "email" ? (
-            <form
-              onSubmit={emailForm.handleSubmit(handleEmailLogin)}
-              noValidate
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium mb-1.5">
-                  {isNepali ? "इमेल" : "Email"}
-                </label>
-                <Input
-                  type="email"
-                  placeholder="user@example.com"
-                  autoFocus
-                  autoComplete="email"
-                  {...emailForm.register("email")}
-                />
-                {localizeError(
-                  emailForm.formState.errors.email?.message,
-                  isNepali,
-                ) && (
-                  <p className="mt-1 text-xs text-red-600">
-                    {localizeError(
-                      emailForm.formState.errors.email?.message,
-                      isNepali,
-                    )}
-                  </p>
-                )}
+            <>
+              {/* Sign in | Register sub-toggle. Sign-in uses an existing
+                  account; Register creates a new email+password account. */}
+              <div className="grid grid-cols-2 gap-1 mb-5 rounded-lg bg-terrain-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => switchEmailMode("signin")}
+                  className={`rounded-md py-1.5 text-sm font-medium transition-colors ${emailMode === "signin" ? "bg-white text-crimson-700 shadow-sm" : "text-terrain-500 hover:text-mountain-900"}`}
+                >
+                  {isNepali ? "साइन इन" : "Sign in"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchEmailMode("register")}
+                  className={`rounded-md py-1.5 text-sm font-medium transition-colors ${emailMode === "register" ? "bg-white text-crimson-700 shadow-sm" : "text-terrain-500 hover:text-mountain-900"}`}
+                >
+                  {isNepali ? "दर्ता गर्नुहोस्" : "Register"}
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">
-                  {isNepali ? "पासवर्ड" : "Password"}
-                </label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  {...emailForm.register("password")}
-                />
-                {localizeError(
-                  emailForm.formState.errors.password?.message,
-                  isNepali,
-                ) && (
-                  <p className="mt-1 text-xs text-red-600">
-                    {localizeError(
-                      emailForm.formState.errors.password?.message,
-                      isNepali,
-                    )}
-                  </p>
-                )}
-              </div>
-              {submitError && (
-                <p className="text-sm text-red-600">{submitError}</p>
+
+              {infoMessage && (
+                <p className="mb-4 flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{infoMessage}</span>
+                </p>
               )}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={
-                  isLoading ||
-                  !backendConfigured ||
-                  emailForm.formState.isSubmitting
-                }
+
+              <form
+                onSubmit={emailForm.handleSubmit(
+                  emailMode === "register"
+                    ? handleEmailRegister
+                    : handleEmailLogin,
+                )}
+                noValidate
+                className="space-y-4"
               >
-                {isLoading ? "..." : isNepali ? "लगइन गर्नुहोस्" : "Sign In"}
-                {!isLoading && <ArrowRight className="w-4 h-4 ml-2" />}
-              </Button>
-            </form>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">
+                    {isNepali ? "इमेल" : "Email"}
+                  </label>
+                  <Input
+                    type="email"
+                    placeholder="user@example.com"
+                    autoFocus
+                    autoComplete="email"
+                    {...emailForm.register("email")}
+                  />
+                  {localizeError(
+                    emailForm.formState.errors.email?.message,
+                    isNepali,
+                  ) && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {localizeError(
+                        emailForm.formState.errors.email?.message,
+                        isNepali,
+                      )}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium">
+                      {isNepali ? "पासवर्ड" : "Password"}
+                    </label>
+                    {emailMode === "signin" && (
+                      <button
+                        type="button"
+                        onClick={handleForgotPassword}
+                        disabled={isLoading || !backendConfigured}
+                        className="text-xs text-crimson-700 hover:underline disabled:opacity-50"
+                      >
+                        {isNepali ? "पासवर्ड बिर्सनुभयो?" : "Forgot password?"}
+                      </button>
+                    )}
+                  </div>
+                  <Input
+                    type="password"
+                    placeholder="••••••••"
+                    autoComplete={
+                      emailMode === "register"
+                        ? "new-password"
+                        : "current-password"
+                    }
+                    {...emailForm.register("password")}
+                  />
+                  {localizeError(
+                    emailForm.formState.errors.password?.message,
+                    isNepali,
+                  ) && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {localizeError(
+                        emailForm.formState.errors.password?.message,
+                        isNepali,
+                      )}
+                    </p>
+                  )}
+                  {emailMode === "register" && (
+                    <p className="mt-1 text-xs text-terrain-500">
+                      {isNepali
+                        ? "कम्तीमा ६ अक्षरको पासवर्ड बनाउनुहोस्।"
+                        : "Choose a password with at least 6 characters."}
+                    </p>
+                  )}
+                </div>
+                {submitError && (
+                  <p className="text-sm text-red-600">{submitError}</p>
+                )}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={
+                    isLoading ||
+                    !backendConfigured ||
+                    emailForm.formState.isSubmitting
+                  }
+                >
+                  {isLoading
+                    ? "..."
+                    : emailMode === "register"
+                      ? isNepali
+                        ? "खाता बनाउनुहोस्"
+                        : "Create account"
+                      : isNepali
+                        ? "लगइन गर्नुहोस्"
+                        : "Sign In"}
+                  {!isLoading && <ArrowRight className="w-4 h-4 ml-2" />}
+                </Button>
+              </form>
+            </>
           ) : step === "phone" ? (
             <form
               onSubmit={phoneForm.handleSubmit(handleSendOtp)}
@@ -600,6 +751,30 @@ export default function LoginPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Registration note. Phone OTP is passwordless so signing in IS
+          registering; the Email tab has an explicit Register sub-toggle.
+          Onboarding sets up the profile after the account exists. */}
+      <div className="mt-5 text-center">
+        <p className="text-sm text-terrain-500">
+          {isNepali ? "श्रम सेवामा नयाँ हुनुहुन्छ?" : "New to Shram Sewa?"}
+        </p>
+        <p className="mt-1 text-sm text-mountain-700">
+          {authMethod === "email"
+            ? isNepali
+              ? "माथिको “दर्ता गर्नुहोस्” ट्याबबाट इमेल र पासवर्डले खाता बनाउनुहोस् — त्यसपछि प्रोफाइल सेटअप हुन्छ।"
+              : "Use the “Register” tab above to create an account with your email and password — then set up your profile."
+            : isNepali
+              ? "माथिको मोबाइल साइन-इनले स्वतः खाता बनाउँछ — त्यसपछि तपाईं कामदारको रूपमा दर्ता गर्न सक्नुहुन्छ।"
+              : "Signing in with your mobile above creates your account automatically — then you can register as a worker."}
+        </p>
+        <Link
+          to="/how-it-works"
+          className="mt-2 inline-block text-sm font-medium text-crimson-700 hover:text-crimson-800"
+        >
+          {isNepali ? "यो कसरी काम गर्छ?" : "How does this work?"}
+        </Link>
+      </div>
     </div>
   );
 }
