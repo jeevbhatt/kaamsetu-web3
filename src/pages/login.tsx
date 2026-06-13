@@ -5,8 +5,17 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useUIStore, useAuthStore } from "../store";
 import { Button, Card, CardContent, Input } from "../components/ui";
-import { Phone, ArrowRight, Shield, Mail, CheckCircle2 } from "lucide-react";
-import { isSupabaseConfigured, translateError } from "../lib";
+import {
+  Phone,
+  ArrowRight,
+  Shield,
+  Mail,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  RefreshCw,
+} from "lucide-react";
+import { getAuthRedirectUrl, isSupabaseConfigured, translateError } from "../lib";
 import { authApi } from "@shram-sewa/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
@@ -64,6 +73,31 @@ function localizeError(message: string | undefined, isNepali: boolean): string |
   return message;
 }
 
+function generatePassword() {
+  const groups = [
+    "ABCDEFGHJKLMNPQRSTUVWXYZ",
+    "abcdefghijkmnopqrstuvwxyz",
+    "23456789",
+    "!@#$%*?",
+  ];
+  const all = groups.join("");
+  const bytes = new Uint32Array(16);
+  crypto.getRandomValues(bytes);
+  const required = groups.map((group, index) =>
+    group.charAt((bytes[index] ?? 0) % group.length),
+  );
+  const rest = Array.from(bytes.slice(required.length, 12)).map(
+    (value) => all.charAt(value % all.length),
+  );
+  return [...required, ...rest]
+    .sort(() => {
+      const shuffleBytes = new Uint32Array(1);
+      crypto.getRandomValues(shuffleBytes);
+      return (shuffleBytes[0] ?? 0) - 2 ** 31;
+    })
+    .join("");
+}
+
 export default function LoginPage() {
   const { locale, setLocale } = useUIStore();
   const { login } = useAuthStore();
@@ -82,6 +116,7 @@ export default function LoginPage() {
   const [emailMode, setEmailMode] = useState<"signin" | "register">("signin");
   // Friendly info banner (e.g. "check your email to confirm" / reset sent).
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const phoneForm = useForm<PhoneFormValues>({
     resolver: zodResolver(phoneSchema),
@@ -205,7 +240,7 @@ export default function LoginPage() {
     const result = await registerWithEmail(
       values.email,
       values.password,
-      `${window.location.origin}/profile`,
+      getAuthRedirectUrl("/profile"),
     );
     setIsLoading(false);
 
@@ -251,7 +286,7 @@ export default function LoginPage() {
     try {
       await authApi.resetPassword(
         email,
-        `${window.location.origin}/reset-password`,
+        getAuthRedirectUrl("/reset-password"),
       );
       setInfoMessage(
         isNepali
@@ -275,7 +310,7 @@ export default function LoginPage() {
     try {
       await authApi.requestEmailMagicLink(
         values.email,
-        `${window.location.origin}/profile`,
+        getAuthRedirectUrl("/profile"),
       );
       setMagicLinkSentTo(values.email);
     } catch (error) {
@@ -316,6 +351,16 @@ export default function LoginPage() {
     setSubmitError("");
     setInfoMessage(null);
     emailForm.clearErrors();
+  };
+
+  const handleGeneratePassword = () => {
+    const password = generatePassword();
+    emailForm.setValue("password", password, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+    setShowPassword(true);
   };
 
   const backToPhoneStep = () => {
@@ -454,7 +499,16 @@ export default function LoginPage() {
                     <label className="block text-sm font-medium">
                       {isNepali ? "पासवर्ड" : "Password"}
                     </label>
-                    {emailMode === "signin" && (
+                    {emailMode === "register" ? (
+                      <button
+                        type="button"
+                        onClick={handleGeneratePassword}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-crimson-700 hover:text-crimson-800"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        {isNepali ? "पासवर्ड बनाउनुहोस्" : "Generate"}
+                      </button>
+                    ) : (
                       <button
                         type="button"
                         onClick={handleForgotPassword}
@@ -465,16 +519,39 @@ export default function LoginPage() {
                       </button>
                     )}
                   </div>
-                  <Input
-                    type="password"
-                    placeholder="••••••••"
-                    autoComplete={
-                      emailMode === "register"
-                        ? "new-password"
-                        : "current-password"
-                    }
-                    {...emailForm.register("password")}
-                  />
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      autoComplete={
+                        emailMode === "register"
+                          ? "new-password"
+                          : "current-password"
+                      }
+                      className="pr-10"
+                      {...emailForm.register("password")}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((current) => !current)}
+                      className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-terrain-500 hover:text-mountain-900"
+                      aria-label={
+                        showPassword
+                          ? isNepali
+                            ? "पासवर्ड लुकाउनुहोस्"
+                            : "Hide password"
+                          : isNepali
+                            ? "पासवर्ड देखाउनुहोस्"
+                            : "Show password"
+                      }
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                   {localizeError(
                     emailForm.formState.errors.password?.message,
                     isNepali,

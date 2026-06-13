@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { useUIStore, useAuthStore } from "../store";
 import { Button, Card, CardContent, Badge } from "../components/ui";
 import { Link } from "@tanstack/react-router";
@@ -14,6 +15,7 @@ import {
 } from "../hooks";
 import {
   User,
+  Camera,
   Bell,
   Settings,
   LogOut,
@@ -21,14 +23,25 @@ import {
   CheckCircle,
   Clock,
   Globe,
+  Loader2,
   Power,
 } from "lucide-react";
 import type { HireRecord } from "@shram-sewa/shared";
+import { authApi as sharedAuthApi } from "@shram-sewa/shared";
+import { getSupabaseClient } from "../lib";
 
 export default function ProfilePage() {
   const { locale, toggleLocale } = useUIStore();
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, logout, initialize } = useAuthStore();
   const isNepali = locale === "ne";
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+  const [roleMessage, setRoleMessage] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [isRoleUpdating, setIsRoleUpdating] = useState(false);
   const hiresQuery = useMyHires(isAuthenticated);
   const notificationsQuery = useNotifications(isAuthenticated);
   const updateHireStatus = useUpdateHireStatusMutation();
@@ -54,7 +67,7 @@ export default function ProfilePage() {
   // a hirer or hasn't completed worker onboarding, the profile query
   // returns null and useIncomingHires no-ops because the id is undefined.
   const isWorker = user?.role === "worker";
-  const myWorkerProfile = useMyWorkerProfile(isAuthenticated && isWorker);
+  const myWorkerProfile = useMyWorkerProfile(isAuthenticated);
   const incomingHires = useIncomingHires(
     myWorkerProfile.data?.id,
     isAuthenticated && isWorker,
@@ -119,6 +132,135 @@ export default function ProfilePage() {
     await updateHireStatus.mutateAsync({ hireId, status: "rejected" });
   };
 
+  const syncUserProfile = async (
+    metadataPatch: Record<string, string | null>,
+    publicPatch: Record<string, string | null>,
+  ) => {
+    if (!user?.id) return;
+    const supabase = getSupabaseClient();
+    await sharedAuthApi.updateUser({
+      data: {
+        full_name: user.fullName || null,
+        full_name_np: user.fullNameNp || null,
+        role: user.role,
+        avatar_url: user.avatarUrl || null,
+        ...metadataPatch,
+      },
+    });
+    const { error } = await (supabase as any)
+      .from("users")
+      .update({
+        ...publicPatch,
+        updated_at: new Date().toISOString(),
+      } as any)
+      .eq("id", user.id);
+    if (error) throw error;
+    await initialize();
+  };
+
+  const handleAvatarFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !user?.id) return;
+
+    setAvatarMessage(null);
+    setAvatarError(null);
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      setAvatarError(
+        isNepali
+          ? "JPG, PNG वा WebP फोटो मात्र प्रयोग गर्नुहोस्।"
+          : "Use a JPG, PNG, or WebP image.",
+      );
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError(
+        isNepali
+          ? "फोटो ५MB भन्दा सानो हुनुपर्छ।"
+          : "Profile image must be smaller than 5MB.",
+      );
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setAvatarPreview(previewUrl);
+    setIsAvatarUploading(true);
+
+    try {
+      const supabase = getSupabaseClient();
+      const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+      const path = `${user.id}/avatar.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(path, file, {
+          cacheControl: "3600",
+          contentType: file.type,
+          upsert: true,
+        });
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      const avatarUrl = `${data.publicUrl}?v=${Date.now()}`;
+      await syncUserProfile(
+        { avatar_url: avatarUrl },
+        { avatar_url: avatarUrl },
+      );
+      setAvatarMessage(
+        isNepali ? "प्रोफाइल फोटो अपडेट भयो।" : "Profile photo updated.",
+      );
+    } catch (error) {
+      setAvatarPreview(null);
+      setAvatarError(
+        error instanceof Error
+          ? error.message
+          : isNepali
+            ? "फोटो अपलोड गर्न सकिएन।"
+            : "Could not upload profile photo.",
+      );
+    } finally {
+      setIsAvatarUploading(false);
+    }
+  };
+
+  const handleRoleSwitch = async (nextRole: "hirer" | "worker") => {
+    if (!user || nextRole === user.role) return;
+    setRoleMessage(null);
+    setRoleError(null);
+
+    if (nextRole === "worker" && !myWorkerProfile.data) {
+      window.location.href = "/onboarding?role=worker";
+      return;
+    }
+
+    setIsRoleUpdating(true);
+    try {
+      await syncUserProfile({ role: nextRole }, { role: nextRole });
+      setRoleMessage(
+        nextRole === "worker"
+          ? isNepali
+            ? "कामदार मोड सक्रिय भयो।"
+            : "Worker mode is active."
+          : isNepali
+            ? "रोजगारदाता मोड सक्रिय भयो।"
+            : "Hirer mode is active.",
+      );
+    } catch (error) {
+      setRoleError(
+        error instanceof Error
+          ? error.message
+          : isNepali
+            ? "भूमिका बदल्न सकिएन।"
+            : "Could not switch account type.",
+      );
+    } finally {
+      setIsRoleUpdating(false);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="max-w-md mx-auto text-center py-12">
@@ -140,26 +282,50 @@ export default function ProfilePage() {
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-crimson-100 flex items-center justify-center overflow-hidden shadow-sm border-2 border-white">
-              {user?.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt={user?.fullName || "User"}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                    const fallback = (
-                      e.target as HTMLImageElement
-                    ).parentElement?.querySelector(".avatar-fallback");
-                    if (fallback) fallback.classList.remove("hidden");
-                  }}
-                />
-              ) : null}
-              <span
-                className={`avatar-fallback ${user?.avatarUrl ? "hidden" : ""}`}
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-crimson-100 flex items-center justify-center overflow-hidden shadow-sm border-2 border-white">
+                {avatarPreview || user?.avatarUrl ? (
+                  <img
+                    src={avatarPreview ?? user?.avatarUrl}
+                    alt={user?.fullName || "User"}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                      const fallback = (
+                        e.target as HTMLImageElement
+                      ).parentElement?.querySelector(".avatar-fallback");
+                      if (fallback) fallback.classList.remove("hidden");
+                    }}
+                  />
+                ) : null}
+                <span
+                  className={`avatar-fallback ${avatarPreview || user?.avatarUrl ? "hidden" : ""}`}
+                >
+                  <User className="w-8 h-8 text-crimson-700" />
+                </span>
+              </div>
+              <button
+                type="button"
+                className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-mountain-700 text-white shadow-sm hover:bg-mountain-900 disabled:opacity-70"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={isAvatarUploading}
+                aria-label={
+                  isNepali ? "प्रोफाइल फोटो बदल्नुहोस्" : "Change profile photo"
+                }
               >
-                <User className="w-8 h-8 text-crimson-700" />
-              </span>
+                {isAvatarUploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Camera className="h-4 w-4" />
+                )}
+              </button>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                className="hidden"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleAvatarFile}
+              />
             </div>
             <div className="flex-1">
               <h1 className="text-xl font-bold text-mountain-900">
@@ -169,6 +335,12 @@ export default function ProfilePage() {
               <Badge variant="secondary" className="mt-1">
                 {roleLabel(user?.role)}
               </Badge>
+              {avatarMessage && (
+                <p className="mt-1 text-xs text-emerald-700">{avatarMessage}</p>
+              )}
+              {avatarError && (
+                <p className="mt-1 text-xs text-red-600">{avatarError}</p>
+              )}
             </div>
             <a href="#settings" aria-label={isNepali ? "सेटिङ" : "Settings"}>
               <Button variant="outline" size="icon">
@@ -222,6 +394,74 @@ export default function ProfilePage() {
           </Card>
         </a>
       </div>
+
+      <Card>
+        <CardContent className="p-6">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-mountain-900">
+                {isNepali ? "खाता प्रकार" : "Account type"}
+              </h2>
+              <p className="mt-1 text-sm text-terrain-500">
+                {isNepali
+                  ? "रोजगारदाता भएर कामदार खोज्नुहोस् वा कामदार भएर अनुरोध लिनुहोस्।"
+                  : "Hire workers as a hirer, or receive requests as a worker."}
+              </p>
+            </div>
+            {isRoleUpdating && (
+              <Loader2 className="mt-1 h-5 w-5 animate-spin text-crimson-700" />
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => void handleRoleSwitch("hirer")}
+              disabled={isRoleUpdating || user?.role === "hirer"}
+              className={`rounded-lg border p-4 text-left transition-colors ${
+                user?.role === "hirer"
+                  ? "border-crimson-300 bg-crimson-50"
+                  : "border-terrain-200 bg-white hover:border-crimson-200"
+              } disabled:cursor-default`}
+            >
+              <User className="mb-3 h-6 w-6 text-crimson-700" />
+              <div className="font-semibold text-mountain-900">
+                {isNepali ? "रोजगारदाता" : "Hirer"}
+              </div>
+              <div className="mt-1 text-sm text-terrain-500">
+                {isNepali ? "कामदार खोज्ने र भाडामा लिने" : "Find and hire workers"}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRoleSwitch("worker")}
+              disabled={isRoleUpdating || user?.role === "worker" || myWorkerProfile.isLoading}
+              className={`rounded-lg border p-4 text-left transition-colors ${
+                user?.role === "worker"
+                  ? "border-crimson-300 bg-crimson-50"
+                  : "border-terrain-200 bg-white hover:border-crimson-200"
+              } disabled:cursor-default disabled:opacity-75`}
+            >
+              <Briefcase className="mb-3 h-6 w-6 text-crimson-700" />
+              <div className="font-semibold text-mountain-900">
+                {isNepali ? "कामदार" : "Worker"}
+              </div>
+              <div className="mt-1 text-sm text-terrain-500">
+                {myWorkerProfile.data
+                  ? isNepali
+                    ? "काम अनुरोध प्राप्त गर्ने"
+                    : "Receive work requests"
+                  : isNepali
+                    ? "कामदार प्रोफाइल सेटअप गर्नुहोस्"
+                    : "Set up a worker profile"}
+              </div>
+            </button>
+          </div>
+          {roleMessage && (
+            <p className="mt-3 text-sm text-emerald-700">{roleMessage}</p>
+          )}
+          {roleError && <p className="mt-3 text-sm text-red-600">{roleError}</p>}
+        </CardContent>
+      </Card>
 
       {/* Notifications list — real DOM rendering with mark-as-read.
           Replaces the previous count-only display. */}

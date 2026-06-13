@@ -69,7 +69,7 @@ export function Footer() {
 
   return (
     <footer className="text-white bg-[radial-gradient(circle_at_15%_20%,#1f3e66_0%,#112641_45%,#0a1520_100%)] border-t border-mountain-700/60">
-      <div className="container mx-auto px-4 py-12">
+      <div className="container mx-auto px-4 pt-10 pb-[calc(6rem+env(safe-area-inset-bottom))] md:py-12">
         <div className="max-w-3xl mb-8">
           <h3 className="font-bold text-lg mb-3">
             {isNepali ? "श्रम सेवा" : "Shram Sewa"}
@@ -103,7 +103,7 @@ export function Footer() {
             than the support email — the link overflowed and pushed
             the page's scrollWidth past the viewport, creating the
             phantom right-side gap the user was seeing. */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 md:gap-8 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-7 sm:grid-cols-2 md:grid-cols-4 md:gap-8">
           {/* Quick Links */}
           <div>
             <h3 className="font-bold text-base md:text-lg mb-4">
@@ -235,7 +235,7 @@ export function Footer() {
             </ul>
           </div>
 
-          <div className="col-span-3 md:col-span-1">
+          <div className="sm:col-span-2 md:col-span-1">
             <h3 className="font-bold text-base md:text-lg mb-4">
               {isNepali ? "डाउनलोड" : "Download"}
             </h3>

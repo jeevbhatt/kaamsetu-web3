@@ -133,6 +133,9 @@ export default function OnboardingPage() {
   const { locale } = useUIStore();
   const navigate = useNavigate();
   const isNepali = locale === "ne";
+  const forceWorkerSetup =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("role") === "worker";
 
   const [step, setStep] = useState(1);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -142,7 +145,7 @@ export default function OnboardingPage() {
     resolver: zodResolver(onboardingSchema),
     mode: "onTouched",
     defaultValues: {
-      role: undefined,
+      role: forceWorkerSetup ? "worker" : undefined,
       fullName: user?.fullName || "",
       fullNameNp: user?.fullNameNp || "",
       provinceId: undefined,
@@ -176,10 +179,10 @@ export default function OnboardingPage() {
   const progress = (step / totalSteps) * 100;
 
   useEffect(() => {
-    if (isProfileComplete()) {
+    if (isProfileComplete() && !forceWorkerSetup) {
       navigate({ to: "/profile", replace: true });
     }
-  }, [isProfileComplete, navigate]);
+  }, [forceWorkerSetup, isProfileComplete, navigate]);
 
   // When province changes, the cascading selects below it must reset so a
   // stale district/local-unit doesn't quietly submit with the new province.
