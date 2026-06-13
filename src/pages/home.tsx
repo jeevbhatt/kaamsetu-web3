@@ -62,7 +62,7 @@ export default function HomePage() {
             className="inline-flex items-center gap-1.5 border-crimson-200 bg-crimson-50 text-crimson-800 shadow-sm"
           >
             <ShieldCheck className="h-3.5 w-3.5" />
-            {isNepali ? "सरकारी मान्यता प्राप्त" : "Government Recognized"}
+            {isNepali ? "स्थानीय तह केन्द्रित" : "Local-level focused"}
           </Badge>
         </motion.div>
       </section>
@@ -109,8 +109,8 @@ export default function HomePage() {
 
             <p className="text-base md:text-xl text-terrain-100 max-w-2xl leading-relaxed mb-7">
               {isNepali
-                ? "नेपालको स्थानीय सरकार-केंद्रित जनशक्ति प्लेटफर्म। आफ्नो स्थान, वडाको आवश्यकता र कामको प्रकार अनुसार भरपर्दो कामदार खोज्नुहोस्।"
-                : "Nepal's local government-focused manpower platform. Discover reliable workers based on your location, ward needs, and job type."}
+                ? "नेपालको स्थानीय तह केन्द्रित जनशक्ति प्लेटफर्म। आफ्नो स्थान, वडाको आवश्यकता र कामको प्रकार अनुसार भरपर्दो कामदार खोज्नुहोस्।"
+                : "Nepal's local-level manpower platform. Discover reliable workers based on your location, ward needs, and job type."}
             </p>
 
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
@@ -189,8 +189,8 @@ export default function HomePage() {
 
             <p className="mt-4 text-xs text-terrain-500 leading-relaxed">
               {isNepali
-                ? "तस्बिर स्रोत: Wikimedia Commons"
-                : "Image source: Wikimedia Commons"}
+                ? "स्थान, वडास्तरको आवश्यकता र उपलब्ध कामदारलाई एउटै खोज अनुभवमा जोड्ने सेवा।"
+                : "A single search experience connecting location, ward-level needs, and available workers."}
             </p>
           </motion.div>
         </div>
@@ -443,8 +443,8 @@ export default function HomePage() {
               </h3>
               <p className="text-terrain-600 max-w-2xl">
                 {isNepali
-                  ? "स्थानीय सरकारले विश्वास गरेको, पटक पटक भाडामा लिइएका कामदारहरूको सूची हेरेर सुरक्षित निर्णय गर्नुहोस्।"
-                  : "Explore trusted workers with the strongest hire history across local governments."}
+                  ? "भाडा इतिहास बलियो भएका, पटक पटक रोजिएका कामदारहरूको सूची हेरेर सुरक्षित निर्णय गर्नुहोस्।"
+                  : "Explore frequently selected workers with the strongest hire history."}
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">

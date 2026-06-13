@@ -20,6 +20,10 @@ const GOOGLE_DRIVE_URL =
   (import.meta as any).env?.VITE_GOOGLE_DRIVE_URL ||
   "#";
 const PLAY_STORE_BADGE_SRC = "/google-play-badge-official.png";
+const SUPPORT_EMAIL =
+  (import.meta as any).env?.PUBLIC_SUPPORT_EMAIL ||
+  (import.meta as any).env?.VITE_SUPPORT_EMAIL ||
+  "support@shramsewa.jeevanbhatt.com.np";
 
 export function Footer() {
   const { locale } = useUIStore();
@@ -72,8 +76,8 @@ export function Footer() {
           </h3>
           <p className="text-sm text-terrain-100/90 leading-relaxed mb-4">
             {isNepali
-              ? "नेपालको स्थानीय सरकार-समन्वित जनशक्ति प्लेटफर्म। ७५३ स्थानीय तहसम्म पहुँच, सुरक्षित खोज र जिम्मेवार भाडा प्रक्रियासहित।"
-              : "Nepal's local government-aligned manpower platform with coverage across all 753 local units, safer discovery, and accountable hiring workflows."}
+              ? "नेपालको स्थानीय तह केन्द्रित जनशक्ति प्लेटफर्म। ७५३ स्थानीय तहसम्म पहुँच, सुरक्षित खोज र जिम्मेवार भाडा प्रक्रियासहित।"
+              : "Nepal's local-level manpower platform with coverage across all 753 local units, safer discovery, and accountable hiring workflows."}
           </p>
           <div className="flex gap-3">
             <a
@@ -84,7 +88,7 @@ export function Footer() {
               <Globe className="w-4 h-4" />
             </a>
             <a
-              href="mailto:info@shramsewa.gov.np"
+              href={`mailto:${SUPPORT_EMAIL}`}
               className="w-8 h-8 rounded-full bg-crimson-700 flex items-center justify-center hover:bg-crimson-600 transition-colors"
               aria-label={isNepali ? "इमेल" : "Email"}
             >
@@ -96,7 +100,7 @@ export function Footer() {
         {/* Mobile starts at 2 columns so each column has room for long
             strings like the email; 3 columns at sm; 4 at md. Previously
             3-col on mobile crammed columns to ~108px which is narrower
-            than `info@shramsewa.gov.np` — the link overflowed and pushed
+            than the support email — the link overflowed and pushed
             the page's scrollWidth past the viewport, creating the
             phantom right-side gap the user was seeing. */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 md:gap-8 md:grid-cols-4">
@@ -214,11 +218,10 @@ export function Footer() {
               <li className="flex items-start gap-2 min-w-0">
                 <Mail className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <a
-                  href={`mailto:${import.meta.env.PUBLIC_SUPPORT_EMAIL ?? "info@shramsewa.gov.np"}`}
+                  href={`mailto:${SUPPORT_EMAIL}`}
                   className="break-all"
                 >
-                  {import.meta.env.PUBLIC_SUPPORT_EMAIL ??
-                    "info@shramsewa.gov.np"}
+                  {SUPPORT_EMAIL}
                 </a>
               </li>
               <li>
@@ -306,8 +309,8 @@ export function Footer() {
           </p>
           <p className="text-sm text-terrain-300">
             {isNepali
-              ? "नेपाल सरकार स्थानीय तह मान्यता प्राप्त"
-              : "Nepal Government Local Level Recognized"}
+              ? "स्थानीय तह केन्द्रित डिजिटल सेवा"
+              : "Local-level focused digital service"}
           </p>
         </div>
       </div>

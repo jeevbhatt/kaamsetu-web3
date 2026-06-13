@@ -22,6 +22,7 @@ import {
 } from "../lib/hire-outbox";
 import { useCreateHireMutation } from "../hooks";
 import { useToast } from "../components/ToastContainer";
+import { translateError } from "../lib/error-messages";
 import NepaliDate from "nepali-date";
 
 interface HireModalProps {
@@ -52,17 +53,14 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
   const [workDate, setWorkDate] = useState<string>(today);
   const [workDays, setWorkDays] = useState(1);
   const [error, setError] = useState<string | null>(null);
-  const [errorStatus, setErrorStatus] = useState<number | null>(null);
 
   const handleConfirm = async () => {
     setError(null);
-    setErrorStatus(null);
 
     if (isSelfHire) {
       setError(
         isNepali ? "तपाईंले आफैलाई भाडामा लिन सक्नुहुन्न।" : "You cannot hire yourself.",
       );
-      setErrorStatus(403);
       return;
     }
 
@@ -70,7 +68,6 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
       setError(
         isNepali ? "कामको विवरण आवश्यक छ।" : "Work description is required.",
       );
-      setErrorStatus(400);
       return;
     }
 
@@ -78,7 +75,6 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
       setError(
         isNepali ? "भाडा सेवा उपलब्ध छैन।" : "Hiring service is unavailable.",
       );
-      setErrorStatus(503);
       return;
     }
 
@@ -87,10 +83,9 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
     if (hirerIp && hasHireIpLock(worker.id, hirerIp)) {
       setError(
         isNepali
-          ? "यो IP बाट यो कामदारलाई अनुरोध पहिले नै पठाइएको छ।"
-          : "A request for this worker already exists from this IP.",
+          ? "यो स्थानबाट यो कामदारलाई अनुरोध पहिले नै पठाइएको छ।"
+          : "A request for this worker already exists from this location.",
       );
-      setErrorStatus(409);
       return;
     }
 
@@ -137,13 +132,11 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
       }
 
       setError(
-        mutationError instanceof Error
-          ? mutationError.message
-          : isNepali
-            ? "भाडा अनुरोध पठाउन सकिएन।"
-            : "Unable to send hire request.",
+        translateError(mutationError, {
+          isNepali,
+          context: "hire",
+        }),
       );
-      setErrorStatus(500);
     }
   };
 
@@ -160,12 +153,12 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.14 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/50 z-40"
+            className="fixed inset-0 bg-black/55 z-[80]"
           />
 
           {/* Modal */}
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-3 sm:p-4"
             onClick={onClose}
           >
             <motion.div
@@ -178,11 +171,11 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
                 stiffness: 380,
                 mass: 0.8,
               }}
-              className="w-full max-w-md max-h-[90vh]"
+              className="w-full max-w-md max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh]"
               onClick={(event) => event.stopPropagation()}
             >
-              <Card className="max-h-[90vh] overflow-hidden">
-                <CardContent className="p-6 max-h-[90vh] overflow-y-auto">
+              <Card className="max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-2xl">
+                <CardContent className="p-5 sm:p-6 max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] overflow-y-auto overscroll-contain pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
                   {/* Header */}
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-2xl font-bold text-mountain-900">
@@ -323,19 +316,19 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
                   {/* Error */}
                   {error && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                      {errorStatus && (
-                        <p className="text-xs font-semibold text-red-800 mb-1">
-                          {isNepali
-                            ? `त्रुटि स्थिति: ${errorStatus}`
-                            : `Error status: ${errorStatus}`}
-                        </p>
-                      )}
                       <p className="text-sm text-red-700">{error}</p>
                     </div>
                   )}
 
+                  {/* Info note */}
+                  <p className="text-xs text-terrain-500 text-center mb-4">
+                    {isNepali
+                      ? "सुरक्षाका लागि एउटै स्थानबाट दोहोरिएको अनुरोध रोक्न सकिन्छ।"
+                      : "For safety, duplicate requests from the same location may be blocked."}
+                  </p>
+
                   {/* Actions */}
-                  <div className="flex gap-3">
+                  <div className="sticky bottom-0 -mx-5 sm:-mx-6 px-5 sm:px-6 pt-3 pb-[calc(0.25rem+env(safe-area-inset-bottom))] bg-white/95 backdrop-blur border-t border-terrain-100 flex gap-3">
                     <Button
                       variant="outline"
                       onClick={onClose}
@@ -360,13 +353,6 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
                       </Button>
                     </motion.div>
                   </div>
-
-                  {/* Info note */}
-                  <p className="text-xs text-terrain-500 text-center mt-4">
-                    {isNepali
-                      ? "IP प्रमाणीकरण स्थानीय रूपमा असफल भए पनि सर्भरले अनुरोध समयमा IP रेकर्ड गर्ने प्रयास गर्छ"
-                      : "If local IP lookup fails, the server will still attempt to resolve and record your IP"}
-                  </p>
                 </CardContent>
               </Card>
             </motion.div>

@@ -2,6 +2,11 @@ import { useUIStore } from "../store";
 import { Card, CardContent } from "../components/ui";
 import { Mail, Phone, MapPin } from "lucide-react";
 
+const SUPPORT_EMAIL =
+  (import.meta as any).env?.PUBLIC_SUPPORT_EMAIL ||
+  (import.meta as any).env?.VITE_SUPPORT_EMAIL ||
+  "support@shramsewa.jeevanbhatt.com.np";
+
 export default function ContactPage() {
   const { locale } = useUIStore();
   const isNepali = locale === "ne";
@@ -54,10 +59,9 @@ export default function ContactPage() {
               </p>
               <a
                 className="text-terrain-500 hover:text-crimson-700"
-                href={`mailto:${import.meta.env.PUBLIC_SUPPORT_EMAIL ?? "info@shramsewa.gov.np"}`}
+                href={`mailto:${SUPPORT_EMAIL}`}
               >
-                {import.meta.env.PUBLIC_SUPPORT_EMAIL ??
-                  "info@shramsewa.gov.np"}
+                {SUPPORT_EMAIL}
               </a>
             </div>
           </div>
