@@ -9,6 +9,7 @@ export {
   CardContent,
 } from "./card";
 export { Badge, badgeVariants } from "./badge";
+export { Avatar, AvatarImage, AvatarFallback } from "./avatar";
 export { Skeleton } from "./skeleton";
 export {
   Pagination,

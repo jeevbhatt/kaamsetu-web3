@@ -62,6 +62,11 @@ const PERMISSION: Bilingual = {
   ne: "तपाईंलाई यो गर्ने अनुमति छैन।",
 };
 
+const SESSION_EXPIRED: Bilingual = {
+  en: "Your session expired. Please sign in again.",
+  ne: "तपाईंको सत्र समाप्त भयो। कृपया फेरि साइन इन गर्नुहोस्।",
+};
+
 const RATE_LIMIT: Bilingual = {
   en: "Too many attempts. Please wait a minute and try again.",
   ne: "धेरै पटक प्रयास भयो। कृपया एक मिनेट पर्खेर फेरि प्रयास गर्नुहोस्।",
@@ -160,7 +165,47 @@ export function translateError(
     case "42501": // insufficient_privilege (RLS)
       return pick(PERMISSION, isNepali);
     case "over_request_rate_limit":
+    case "rate_limit_exceeded":
       return pick(RATE_LIMIT, isNepali);
+    case "weak_password":
+      return pick(
+        {
+          en: "Please use a stronger password, or tap Generate to create one.",
+          ne: "कृपया बलियो पासवर्ड प्रयोग गर्नुहोस्, वा Generate थिचेर नयाँ बनाउनुहोस्।",
+        },
+        isNepali,
+      );
+    case "email_exists":
+    case "user_already_exists":
+    case "user_already_registered":
+      return pick(
+        {
+          en: "This email is already registered. Please sign in instead.",
+          ne: "यो इमेल पहिले नै दर्ता भइसकेको छ। कृपया साइन इन गर्नुहोस्।",
+        },
+        isNepali,
+      );
+    case "email_not_confirmed":
+      return pick(
+        {
+          en: "Please confirm your email first, then sign in.",
+          ne: "कृपया पहिले आफ्नो इमेल पुष्टि गर्नुहोस्, त्यसपछि साइन इन गर्नुहोस्।",
+        },
+        isNepali,
+      );
+    case "refresh_token_not_found":
+    case "session_not_found":
+    case "invalid_jwt":
+    case "jwt_expired":
+      return pick(SESSION_EXPIRED, isNepali);
+    case "PGRST116":
+      return pick(
+        {
+          en: "The requested record was not found.",
+          ne: "अनुरोध गरिएको रेकर्ड भेटिएन।",
+        },
+        isNepali,
+      );
     case "phone_provider_disabled":
     case "sms_send_failed":
       return pick(
@@ -204,11 +249,59 @@ export function translateError(
     if (m.includes("duplicate") || m.includes("already registered")) {
       return pick(duplicateMessage(context), isNepali);
     }
+    if (m.includes("already registered") || m.includes("user already exists")) {
+      return pick(
+        {
+          en: "This account already exists. Please sign in instead.",
+          ne: "यो खाता पहिले नै छ। कृपया साइन इन गर्नुहोस्।",
+        },
+        isNepali,
+      );
+    }
+    if (m.includes("weak password")) {
+      return pick(
+        {
+          en: "Please use a stronger password, or tap Generate to create one.",
+          ne: "कृपया बलियो पासवर्ड प्रयोग गर्नुहोस्, वा Generate थिचेर नयाँ बनाउनुहोस्।",
+        },
+        isNepali,
+      );
+    }
+    if (m.includes("email not confirmed")) {
+      return pick(
+        {
+          en: "Please confirm your email first, then sign in.",
+          ne: "कृपया पहिले आफ्नो इमेल पुष्टि गर्नुहोस्, त्यसपछि साइन इन गर्नुहोस्।",
+        },
+        isNepali,
+      );
+    }
+    if (
+      m.includes("jwt expired") ||
+      m.includes("session not found") ||
+      m.includes("refresh token")
+    ) {
+      return pick(SESSION_EXPIRED, isNepali);
+    }
     if (m.includes("already exists") || m.includes("already been")) {
       return pick(duplicateMessage(context), isNepali);
     }
-    if (m.includes("permission") || m.includes("not allowed") || m.includes("rls")) {
+    if (
+      m.includes("permission") ||
+      m.includes("not allowed") ||
+      m.includes("row-level security") ||
+      m.includes("rls")
+    ) {
       return pick(PERMISSION, isNepali);
+    }
+    if (m.includes("bucket not found") || m.includes("storage")) {
+      return pick(
+        {
+          en: "Profile photo storage is not ready. Please try again shortly.",
+          ne: "प्रोफाइल फोटो स्टोरेज तयार छैन। कृपया केही बेरमा फेरि प्रयास गर्नुहोस्।",
+        },
+        isNepali,
+      );
     }
     if (m.includes("not configured") || m.includes("unavailable")) {
       return pick(UNAVAILABLE, isNepali);

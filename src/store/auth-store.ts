@@ -78,6 +78,24 @@ function mapSupabaseSession(raw: unknown): AuthSession | null {
 }
 
 let authListenerBound = false;
+const AUTH_SESSION_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
 
 // Auth helper functions using authApi
 //
@@ -292,7 +310,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       // Ensure client is initialized before session and subscription checks.
       getSupabaseClient();
 
-      const liveSession = mapSupabaseSession(await authApi.getSession());
+      const liveSession = mapSupabaseSession(
+        await withTimeout(
+          authApi.getSession(),
+          AUTH_SESSION_TIMEOUT_MS,
+          "Auth session check timed out.",
+        ),
+      );
       set({
         session: liveSession,
         user: liveSession?.user ?? null,
@@ -465,7 +489,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       // When a session came back, the account is created AND signed in —
       // reflect that in the store so the app is immediately authenticated.
       if (result.kind === "session") {
-        const liveSession = mapSupabaseSession(await authApi.getSession());
+        const liveSession = mapSupabaseSession(
+          await withTimeout(
+            authApi.getSession(),
+            AUTH_SESSION_TIMEOUT_MS,
+            "Auth session check timed out.",
+          ),
+        );
         set({
           user: liveSession?.user ?? null,
           session: liveSession,

@@ -1,7 +1,16 @@
 import { useRef, useState } from "react";
 import { useUIStore, useAuthStore } from "../store";
-import { Button, Card, CardContent, Badge } from "../components/ui";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Button,
+  Card,
+  CardContent,
+  Badge,
+} from "../components/ui";
 import { Link } from "@tanstack/react-router";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   useMyHires,
   useNotifications,
@@ -28,12 +37,15 @@ import {
 } from "lucide-react";
 import type { HireRecord } from "@shram-sewa/shared";
 import { authApi as sharedAuthApi } from "@shram-sewa/shared";
-import { getSupabaseClient } from "../lib";
+import { getSupabaseClient, translateError } from "../lib";
+import { useToast } from "../components/ToastContainer";
 
 export default function ProfilePage() {
   const { locale, toggleLocale } = useUIStore();
   const { user, isAuthenticated, logout, initialize } = useAuthStore();
   const isNepali = locale === "ne";
+  const reduceMotion = useReducedMotion();
+  const toast = useToast();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
@@ -170,18 +182,26 @@ export default function ProfilePage() {
 
     const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
     if (!allowedTypes.includes(file.type)) {
-      setAvatarError(
+      const message =
         isNepali
           ? "JPG, PNG वा WebP फोटो मात्र प्रयोग गर्नुहोस्।"
-          : "Use a JPG, PNG, or WebP image.",
+          : "Use a JPG, PNG, or WebP image.";
+      setAvatarError(message);
+      toast.warning(
+        isNepali ? "फोटो स्वीकार भएन" : "Image not accepted",
+        message,
       );
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setAvatarError(
+      const message =
         isNepali
           ? "फोटो ५MB भन्दा सानो हुनुपर्छ।"
-          : "Profile image must be smaller than 5MB.",
+          : "Profile image must be smaller than 5MB.";
+      setAvatarError(message);
+      toast.warning(
+        isNepali ? "फोटो धेरै ठूलो छ" : "Image is too large",
+        message,
       );
       return;
     }
@@ -209,17 +229,21 @@ export default function ProfilePage() {
         { avatar_url: avatarUrl },
         { avatar_url: avatarUrl },
       );
-      setAvatarMessage(
-        isNepali ? "प्रोफाइल फोटो अपडेट भयो।" : "Profile photo updated.",
+      const message = isNepali
+        ? "प्रोफाइल फोटो अपडेट भयो।"
+        : "Profile photo updated.";
+      setAvatarMessage(message);
+      toast.success(
+        isNepali ? "फोटो अपडेट भयो" : "Photo updated",
+        message,
       );
     } catch (error) {
       setAvatarPreview(null);
-      setAvatarError(
-        error instanceof Error
-          ? error.message
-          : isNepali
-            ? "फोटो अपलोड गर्न सकिएन।"
-            : "Could not upload profile photo.",
+      const message = translateError(error, { isNepali, context: "profile" });
+      setAvatarError(message);
+      toast.error(
+        isNepali ? "फोटो अपलोड भएन" : "Photo upload failed",
+        message,
       );
     } finally {
       setIsAvatarUploading(false);
@@ -239,22 +263,25 @@ export default function ProfilePage() {
     setIsRoleUpdating(true);
     try {
       await syncUserProfile({ role: nextRole }, { role: nextRole });
-      setRoleMessage(
+      const message =
         nextRole === "worker"
           ? isNepali
             ? "कामदार मोड सक्रिय भयो।"
             : "Worker mode is active."
           : isNepali
             ? "रोजगारदाता मोड सक्रिय भयो।"
-            : "Hirer mode is active.",
+            : "Hirer mode is active.";
+      setRoleMessage(message);
+      toast.success(
+        isNepali ? "खाता प्रकार बदलियो" : "Account type updated",
+        message,
       );
     } catch (error) {
-      setRoleError(
-        error instanceof Error
-          ? error.message
-          : isNepali
-            ? "भूमिका बदल्न सकिएन।"
-            : "Could not switch account type.",
+      const message = translateError(error, { isNepali, context: "profile" });
+      setRoleError(message);
+      toast.error(
+        isNepali ? "खाता प्रकार बदल्न सकिएन" : "Account type not updated",
+        message,
       );
     } finally {
       setIsRoleUpdating(false);
@@ -279,31 +306,26 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      <motion.div
+        initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+        animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
+      >
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
             <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-crimson-100 flex items-center justify-center overflow-hidden shadow-sm border-2 border-white">
+              <Avatar className="h-16 w-16 border-2 border-white bg-crimson-100 shadow-sm">
                 {avatarPreview || user?.avatarUrl ? (
-                  <img
+                  <AvatarImage
                     src={avatarPreview ?? user?.avatarUrl}
                     alt={user?.fullName || "User"}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                      const fallback = (
-                        e.target as HTMLImageElement
-                      ).parentElement?.querySelector(".avatar-fallback");
-                      if (fallback) fallback.classList.remove("hidden");
-                    }}
                   />
                 ) : null}
-                <span
-                  className={`avatar-fallback ${avatarPreview || user?.avatarUrl ? "hidden" : ""}`}
-                >
+                <AvatarFallback>
                   <User className="w-8 h-8 text-crimson-700" />
-                </span>
-              </div>
+                </AvatarFallback>
+              </Avatar>
               <button
                 type="button"
                 className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-mountain-700 text-white shadow-sm hover:bg-mountain-900 disabled:opacity-70"
@@ -350,6 +372,7 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+      </motion.div>
 
       {/* Quick-stats cards. The hires + notifications cards anchor-scroll
           to their respective lists below (real interaction, not the old
@@ -395,6 +418,11 @@ export default function ProfilePage() {
         </a>
       </div>
 
+      <motion.div
+        initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+        animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+        transition={{ delay: reduceMotion ? 0 : 0.04, duration: 0.18, ease: "easeOut" }}
+      >
       <Card>
         <CardContent className="p-6">
           <div className="mb-4 flex items-start justify-between gap-4">
@@ -462,6 +490,7 @@ export default function ProfilePage() {
           {roleError && <p className="mt-3 text-sm text-red-600">{roleError}</p>}
         </CardContent>
       </Card>
+      </motion.div>
 
       {/* Notifications list — real DOM rendering with mark-as-read.
           Replaces the previous count-only display. */}

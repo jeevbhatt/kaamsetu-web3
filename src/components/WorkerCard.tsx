@@ -4,7 +4,15 @@
  * Supports both list and grid layouts
  */
 
-import { Card, CardContent, Badge, Button } from "./ui";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Card,
+  CardContent,
+  Badge,
+  Button,
+} from "./ui";
 import { MapPin, Star, Phone, CheckCircle, Clock } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useUIStore } from "../store";
@@ -64,17 +72,14 @@ export function WorkerCard({
           {/* Avatar */}
           <div className={`${variant === "list" ? "flex-shrink-0" : "mb-3"}`}>
             <div className="relative">
-              {worker.user.avatarUrl ? (
-                <img
-                  src={worker.user.avatarUrl}
-                  alt={displayName}
-                  className="w-16 h-16 rounded-full object-cover border border-terrain-200"
-                />
-              ) : (
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-crimson-500 to-gold-500 flex items-center justify-center text-white font-bold text-xl">
+              <Avatar className="h-16 w-16 border border-terrain-200">
+                {worker.user.avatarUrl ? (
+                  <AvatarImage src={worker.user.avatarUrl} alt={displayName} />
+                ) : null}
+                <AvatarFallback className="bg-gradient-to-br from-crimson-500 to-gold-500 text-xl font-bold text-white">
                   {displayName.charAt(0)}
-                </div>
-              )}
+                </AvatarFallback>
+              </Avatar>
               {worker.isAvailable && (
                 <div className="absolute -bottom-1 -right-1">
                   <div className="w-5 h-5 bg-green-500 rounded-full border-2 border-white" />
