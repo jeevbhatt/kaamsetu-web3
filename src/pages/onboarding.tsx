@@ -58,6 +58,11 @@ const onboardingSchema = z
       .number()
       .int()
       .positive("Local unit is required"),
+    wardNo: z.coerce
+      .number()
+      .int()
+      .min(1, "Ward number is required")
+      .max(35, "Ward number cannot exceed 35"),
 
     // Worker-only fields (validated conditionally below)
     jobCategoryId: z.coerce.number().int().positive().optional(),
@@ -110,6 +115,12 @@ function localizeError(message: string | undefined, isNepali: boolean): string |
   if (message.includes("Local unit is required")) {
     return "स्थानीय तह आवश्यक छ";
   }
+  if (message.includes("Ward number is required")) {
+    return "वडा नम्बर आवश्यक छ";
+  }
+  if (message.includes("Ward number cannot exceed")) {
+    return "वडा नम्बर ३५ भन्दा बढी हुनु हुँदैन";
+  }
   if (message.includes("Job category is required")) {
     return "कामको वर्ग आवश्यक छ";
   }
@@ -151,6 +162,7 @@ export default function OnboardingPage() {
       provinceId: undefined,
       districtId: undefined,
       localUnitId: undefined,
+      wardNo: undefined,
       jobCategoryId: undefined,
       experienceYrs: 0,
       dailyRateNpr: undefined,
@@ -170,10 +182,21 @@ export default function OnboardingPage() {
   const role = watch("role");
   const provinceId = watch("provinceId");
   const districtId = watch("districtId");
+  const localUnitId = watch("localUnitId");
 
   const jobCategoriesQuery = useJobCategories(true);
   const localUnitsQuery = useLocalUnits(districtId || undefined);
   const provinceDistricts = provinceId ? getDistrictsByProvince(provinceId) : [];
+
+  // Ward options for the chosen municipality (1 … its ward_count). Mirrors the
+  // search filter pattern so an onboarded worker records their real ward.
+  const localUnits = (localUnitsQuery.data ?? []) as Array<{
+    id: number;
+    ward_count?: number | null;
+  }>;
+  const wardCount =
+    localUnits.find((u) => u.id === Number(localUnitId))?.ward_count ?? 0;
+  const wardOptions = Array.from({ length: wardCount }, (_, i) => i + 1);
 
   const totalSteps = role === "worker" ? 3 : role === "hirer" ? 2 : 3;
   const progress = (step / totalSteps) * 100;
@@ -189,11 +212,19 @@ export default function OnboardingPage() {
   useEffect(() => {
     setValue("districtId", undefined as unknown as number);
     setValue("localUnitId", undefined as unknown as number);
+    setValue("wardNo", undefined as unknown as number);
   }, [provinceId, setValue]);
 
   useEffect(() => {
     setValue("localUnitId", undefined as unknown as number);
+    setValue("wardNo", undefined as unknown as number);
   }, [districtId, setValue]);
+
+  // Changing the municipality changes its ward range, so a previously chosen
+  // ward must reset rather than quietly submit against the new unit.
+  useEffect(() => {
+    setValue("wardNo", undefined as unknown as number);
+  }, [localUnitId, setValue]);
 
   const advance = async () => {
     setSubmitError(null);
@@ -207,6 +238,7 @@ export default function OnboardingPage() {
         "provinceId",
         "districtId",
         "localUnitId",
+        "wardNo",
       ]);
       if (!ok) return;
     }
@@ -254,10 +286,7 @@ export default function OnboardingPage() {
           provinceId: Number(values.provinceId),
           districtId: Number(values.districtId),
           localUnitId: Number(values.localUnitId),
-          // Default ward 1 — we'll prompt for ward in a later screen
-          // (most rural municipalities have ≤9 wards; default keeps the
-          // initial flow simple while still recording a valid value).
-          wardNo: 1,
+          wardNo: Number(values.wardNo),
           experienceYrs: Number(values.experienceYrs ?? 0),
           dailyRateNpr: Number(values.dailyRateNpr),
           about: values.about?.trim() ?? "",
@@ -467,6 +496,27 @@ export default function OnboardingPage() {
                 {localizeError(errors.localUnitId?.message, isNepali) && (
                   <p className="-mt-1 text-xs text-red-600">
                     {localizeError(errors.localUnitId?.message, isNepali)}
+                  </p>
+                )}
+
+                <select
+                  className="w-full flex h-10 rounded-md border border-terrain-200 bg-white px-3 py-2 text-sm"
+                  {...register("wardNo", { valueAsNumber: true })}
+                  defaultValue=""
+                  disabled={!localUnitId || wardOptions.length === 0}
+                >
+                  <option value="" disabled>
+                    {isNepali ? "वडा छान्नुहोस्" : "Select Ward"}
+                  </option>
+                  {wardOptions.map((w) => (
+                    <option key={w} value={w}>
+                      {isNepali ? `वडा ${w}` : `Ward ${w}`}
+                    </option>
+                  ))}
+                </select>
+                {localizeError(errors.wardNo?.message, isNepali) && (
+                  <p className="-mt-1 text-xs text-red-600">
+                    {localizeError(errors.wardNo?.message, isNepali)}
                   </p>
                 )}
               </div>

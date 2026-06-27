@@ -13,7 +13,7 @@ import {
   Badge,
   Button,
 } from "./ui";
-import { MapPin, Star, Phone, CheckCircle, Clock } from "lucide-react";
+import { MapPin, Star, CheckCircle, Clock } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useUIStore } from "../store";
 import { usePrefetchWorker } from "../hooks";
@@ -201,21 +201,14 @@ export function WorkerCard({
 
             {/* Actions */}
             {showHireButton && (
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Button
-                    onClick={handleHireClick}
-                    disabled={!worker.isAvailable}
-                    className="w-full"
-                    size="sm"
-                  >
-                    {isNepali ? "भाडामा लिनुहोस्" : "Hire"}
-                  </Button>
-                </div>
-                <Button variant="outline" size="sm" className="flex-shrink-0">
-                  <Phone className="w-4 h-4" />
-                </Button>
-              </div>
+              <Button
+                onClick={handleHireClick}
+                disabled={!worker.isAvailable}
+                className="w-full"
+                size="sm"
+              >
+                {isNepali ? "भाडामा लिनुहोस्" : "Hire"}
+              </Button>
             )}
           </div>
         </CardContent>

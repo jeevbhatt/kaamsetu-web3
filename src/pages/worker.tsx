@@ -1,5 +1,6 @@
 import { useParams, Link } from "@tanstack/react-router";
 import { useUIStore } from "../store";
+import { useAuthStore } from "../store/auth-store";
 import { Button, Card, CardContent, Badge } from "../components/ui";
 import {
   Star,
@@ -17,8 +18,11 @@ import type { WorkerDisplay } from "@shram-sewa/shared";
 export default function WorkerPage() {
   const { workerId } = useParams({ from: "/worker/$workerId" });
   const { locale } = useUIStore();
+  const { user, isAuthenticated } = useAuthStore();
   const isNepali = locale === "ne";
   const backendConfigured = isSupabaseConfigured();
+  // Worker-mode accounts cannot hire (mirrors the hire_records RLS block).
+  const isWorkerRole = isAuthenticated && user?.role === "worker";
 
   const workerQuery = useWorker(workerId, backendConfigured);
 
@@ -209,11 +213,27 @@ export default function WorkerPage() {
                   </span>
                   <span className="text-terrain-500">/day</span>
                 </div>
-                <Link to="/hire/$workerId" params={{ workerId: worker.id }}>
-                  <Button size="lg" disabled={!worker.isAvailable}>
-                    {isNepali ? "भाडामा लिनुहोस्" : "Hire Now"}
-                  </Button>
-                </Link>
+                {isWorkerRole ? (
+                  <div className="flex flex-col items-start gap-1">
+                    <Button size="lg" disabled title={isNepali ? "कामदार मोडमा भाडामा लिन मिल्दैन" : "Hiring is disabled in worker mode"}>
+                      {isNepali ? "भाडामा लिनुहोस्" : "Hire Now"}
+                    </Button>
+                    <Link
+                      to="/profile"
+                      className="text-xs text-crimson-700 hover:underline"
+                    >
+                      {isNepali
+                        ? "भाडामा लिन रोजगारदाता मोडमा बदल्नुहोस्"
+                        : "Switch to hirer mode to hire"}
+                    </Link>
+                  </div>
+                ) : (
+                  <Link to="/hire/$workerId" params={{ workerId: worker.id }}>
+                    <Button size="lg" disabled={!worker.isAvailable}>
+                      {isNepali ? "भाडामा लिनुहोस्" : "Hire Now"}
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           </div>

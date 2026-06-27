@@ -28,7 +28,13 @@ import {
 import { useToast } from "../components/ToastContainer";
 import { Search, Filter, X, Database, AlertTriangle } from "lucide-react";
 import type { WorkerDisplay } from "@shram-sewa/shared";
-import { useWorkers, useDebouncedValue, useJobCategories } from "../hooks";
+import {
+  useWorkers,
+  useDebouncedValue,
+  useJobCategories,
+  useLocalUnits,
+  useMyWorkerProfile,
+} from "../hooks";
 import { isSupabaseConfigured } from "../lib";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
@@ -116,11 +122,14 @@ export default function SearchPage() {
     setProvinceId,
     setDistrictId,
     setJobCategory,
+    setFilters,
     clearFilters,
   } = useFilterStore();
 
   const provinceId = filters.provinceId;
   const districtId = filters.districtId;
+  const localUnitId = filters.localUnitId;
+  const wardNo = filters.wardNo;
   const jobCategory = filters.jobCategoryId;
 
   const [currentPage, setCurrentPage] = useState(() =>
@@ -196,19 +205,46 @@ export default function SearchPage() {
       ? backendJobCategoryOptions
       : staticJobCategoryOptions;
   const districts = provinceId ? getDistrictsByProvince(provinceId) : [];
+  // Municipalities (local units) for the chosen district, + ward options for
+  // the chosen municipality (1 … its ward_count).
+  const localUnitsQuery = useLocalUnits(districtId);
+  const localUnits = (localUnitsQuery.data ?? []) as Array<{
+    id: number;
+    name_en: string;
+    name_np?: string | null;
+    ward_count?: number | null;
+  }>;
+  const wardCount =
+    localUnits.find((u) => u.id === localUnitId)?.ward_count ?? 0;
+  const wardOptions = Array.from({ length: wardCount }, (_, i) => i + 1);
   const hasActiveFilters = Boolean(
-    provinceId || districtId || jobCategory || searchQuery.trim(),
+    provinceId ||
+      districtId ||
+      localUnitId ||
+      wardNo ||
+      jobCategory ||
+      searchQuery.trim(),
   );
   const queryPage = isSearching ? 1 : currentPage;
   const queryPageSize = isSearching ? 300 : PAGE_SIZE;
+
+  // The searcher's own location anchors proximity ranking (nearest workers
+  // first). Available when the user has a worker profile; harmless otherwise.
+  const myProfile = useMyWorkerProfile(backendConfigured).data;
 
   const workersQuery = useWorkers(
     {
       provinceId,
       districtId,
+      localUnitId,
+      wardNo,
       jobCategoryId: jobCategory,
       isAvailable: true,
       search: debouncedSearchQuery,
+      anchorProvinceId: myProfile?.provinceId,
+      anchorDistrictId: myProfile?.districtId,
+      anchorLocalUnitId: myProfile?.localUnitId,
+      anchorWardNo: myProfile?.wardNo,
     } as any,
     queryPage,
     queryPageSize,
@@ -446,7 +482,11 @@ export default function SearchPage() {
           {isNepali ? "फिल्टर" : "Filters"}
           {hasActiveFilters && (
             <Badge variant="gold" className="ml-1">
-              {[provinceId, districtId, jobCategory].filter(Boolean).length}
+              {
+                [provinceId, districtId, localUnitId, wardNo, jobCategory].filter(
+                  Boolean,
+                ).length
+              }
             </Badge>
           )}
         </Button>
@@ -495,6 +535,10 @@ export default function SearchPage() {
                             e.target.value ? Number(e.target.value) : undefined,
                           );
                           setDistrictId(undefined);
+                          setFilters({
+                            localUnitId: undefined,
+                            wardNo: undefined,
+                          });
                           setCurrentPage(1);
                         });
                       }}
@@ -523,6 +567,10 @@ export default function SearchPage() {
                           setDistrictId(
                             e.target.value ? Number(e.target.value) : undefined,
                           );
+                          setFilters({
+                            localUnitId: undefined,
+                            wardNo: undefined,
+                          });
                           setCurrentPage(1);
                         });
                       }}
@@ -535,6 +583,69 @@ export default function SearchPage() {
                       {districts.map((district) => (
                         <option key={district.id} value={district.id}>
                           {isNepali ? district.nameNp : district.nameEn}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Municipality (local unit) */}
+                  <div>
+                    <label className="text-sm font-medium text-mountain-700 mb-1.5 block">
+                      {isNepali ? "नगरपालिका" : "Municipality"}
+                    </label>
+                    <select
+                      value={localUnitId || ""}
+                      onChange={(e) => {
+                        startTransition(() => {
+                          setFilters({
+                            localUnitId: e.target.value
+                              ? Number(e.target.value)
+                              : undefined,
+                            wardNo: undefined,
+                          });
+                          setCurrentPage(1);
+                        });
+                      }}
+                      disabled={!districtId}
+                      className="w-full h-10 rounded-md border border-terrain-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-crimson-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">
+                        {isNepali ? "सबै नगरपालिका" : "All municipalities"}
+                      </option>
+                      {localUnits.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {isNepali ? u.name_np ?? u.name_en : u.name_en}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Ward number */}
+                  <div>
+                    <label className="text-sm font-medium text-mountain-700 mb-1.5 block">
+                      {isNepali ? "वडा नं." : "Ward No."}
+                    </label>
+                    <select
+                      value={wardNo || ""}
+                      onChange={(e) => {
+                        startTransition(() => {
+                          setFilters({
+                            wardNo: e.target.value
+                              ? Number(e.target.value)
+                              : undefined,
+                          });
+                          setCurrentPage(1);
+                        });
+                      }}
+                      disabled={!localUnitId}
+                      className="w-full h-10 rounded-md border border-terrain-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-crimson-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">
+                        {isNepali ? "सबै वडा" : "All wards"}
+                      </option>
+                      {wardOptions.map((w) => (
+                        <option key={w} value={w}>
+                          {isNepali ? `वडा ${w}` : `Ward ${w}`}
                         </option>
                       ))}
                     </select>

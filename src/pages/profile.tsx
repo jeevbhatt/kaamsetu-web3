@@ -9,7 +9,7 @@ import {
   CardContent,
   Badge,
 } from "../components/ui";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   useMyHires,
@@ -34,6 +34,13 @@ import {
   Globe,
   Loader2,
   Power,
+  Pencil,
+  KeyRound,
+  Trash2,
+  Star,
+  Shield,
+  Wallet,
+  Users,
 } from "lucide-react";
 import type { HireRecord } from "@shram-sewa/shared";
 import { authApi as sharedAuthApi } from "@shram-sewa/shared";
@@ -45,6 +52,7 @@ export default function ProfilePage() {
   const { user, isAuthenticated, logout, initialize } = useAuthStore();
   const isNepali = locale === "ne";
   const reduceMotion = useReducedMotion();
+  const navigate = useNavigate();
   const toast = useToast();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -54,6 +62,15 @@ export default function ProfilePage() {
   const [roleMessage, setRoleMessage] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [isRoleUpdating, setIsRoleUpdating] = useState(false);
+  // Account management (edit name + phone, change password, delete account).
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameNpDraft, setNameNpDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const hiresQuery = useMyHires(isAuthenticated);
   const notificationsQuery = useNotifications(isAuthenticated);
   const updateHireStatus = useUpdateHireStatusMutation();
@@ -92,6 +109,110 @@ export default function ProfilePage() {
   const unreadNotifications =
     notificationsQuery.data?.filter((notification) => !notification.isRead)
       .length ?? 0;
+
+  // ── Dashboard KPIs ──────────────────────────────────────────────────
+  // Counts and earnings are derived from hire_records (the source of truth
+  // the update_worker_stats trigger also reads) rather than trusting cached
+  // counter columns, so the strip can never drift out of sync with the lists
+  // rendered below it. Worker numbers come from incoming requests; hirer
+  // numbers from their own hire history.
+  const nprFormat = (amount: number) =>
+    `रु ${Math.round(amount).toLocaleString("en-IN")}`;
+
+  const incomingHireRows = incomingHires.data ?? [];
+  const workerPending = incomingHireRows.filter(
+    (h) => h.status === "pending",
+  ).length;
+  const workerCompleted = incomingHireRows.filter(
+    (h) => h.status === "completed",
+  );
+  const workerEarnings = workerCompleted.reduce(
+    (sum, h) => sum + (h.agreedRateNpr ?? 0) * (h.workDurationDays || 1),
+    0,
+  );
+
+  const hirerCompleted = hireHistory.filter((h) => h.status === "completed");
+  const hirerSpent = hirerCompleted.reduce(
+    (sum, h) => sum + (h.agreedRateNpr ?? 0) * (h.workDurationDays || 1),
+    0,
+  );
+  const hirerWorkers = new Set(hireHistory.map((h) => h.workerId)).size;
+
+  type Kpi = {
+    icon: typeof Briefcase;
+    label: string;
+    value: string | number;
+    sub?: string;
+    color: string;
+    href: string;
+  };
+
+  const kpis: Kpi[] =
+    isWorker && myWorkerProfile.data
+      ? [
+          {
+            icon: Clock,
+            label: isNepali ? "नयाँ अनुरोध" : "New requests",
+            value: workerPending,
+            color: "text-crimson-700",
+            href: "#incoming-hires-list",
+          },
+          {
+            icon: CheckCircle,
+            label: isNepali ? "सम्पन्न काम" : "Jobs done",
+            value: workerCompleted.length,
+            color: "text-emerald-600",
+            href: "#incoming-hires-list",
+          },
+          {
+            icon: Star,
+            label: isNepali ? "रेटिङ" : "Rating",
+            value:
+              myWorkerProfile.data.avgRating > 0
+                ? myWorkerProfile.data.avgRating.toFixed(1)
+                : "—",
+            sub: `(${myWorkerProfile.data.totalReviews})`,
+            color: "text-gold-500 fill-current",
+            href: "#incoming-hires-list",
+          },
+          {
+            icon: Wallet,
+            label: isNepali ? "अनुमानित आम्दानी" : "Est. earnings",
+            value: nprFormat(workerEarnings),
+            color: "text-mountain-700",
+            href: "#incoming-hires-list",
+          },
+        ]
+      : [
+          {
+            icon: Briefcase,
+            label: isNepali ? "सक्रिय भाडा" : "Active hires",
+            value: activeHires,
+            color: "text-blue-600",
+            href: "#hires-list",
+          },
+          {
+            icon: CheckCircle,
+            label: isNepali ? "सम्पन्न" : "Completed",
+            value: hirerCompleted.length,
+            color: "text-emerald-600",
+            href: "#hires-list",
+          },
+          {
+            icon: Wallet,
+            label: isNepali ? "कुल खर्च" : "Total spent",
+            value: nprFormat(hirerSpent),
+            color: "text-mountain-700",
+            href: "#hires-list",
+          },
+          {
+            icon: Users,
+            label: isNepali ? "भाडामा लिएका कामदार" : "Workers hired",
+            value: hirerWorkers,
+            color: "text-crimson-700",
+            href: "#hires-list",
+          },
+        ];
 
   const formatDate = (date: Date) =>
     date.toLocaleDateString(locale === "ne" ? "ne-NP" : "en-NP", {
@@ -288,6 +409,80 @@ export default function ProfilePage() {
     }
   };
 
+  const handleSaveName = async () => {
+    setIsSavingName(true);
+    try {
+      const trimmedPhone = phoneDraft.trim();
+      await syncUserProfile(
+        { full_name: nameDraft || null, full_name_np: nameNpDraft || null },
+        {
+          full_name: nameDraft || null,
+          full_name_np: nameNpDraft || null,
+          phone: trimmedPhone || null,
+        },
+      );
+      setIsEditingName(false);
+      toast.success(
+        isNepali ? "नाम अपडेट भयो" : "Name updated",
+        "",
+      );
+    } catch (error) {
+      toast.error(
+        isNepali ? "नाम अपडेट भएन" : "Name not updated",
+        translateError(error, { isNepali, context: "profile" }),
+      );
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 6) {
+      toast.warning(
+        isNepali ? "पासवर्ड छोटो छ" : "Password too short",
+        isNepali ? "कम्तीमा ६ अक्षर" : "At least 6 characters",
+      );
+      return;
+    }
+    setIsSavingPassword(true);
+    try {
+      await sharedAuthApi.updatePassword(newPassword);
+      setNewPassword("");
+      toast.success(
+        isNepali ? "पासवर्ड अपडेट भयो" : "Password updated",
+        "",
+      );
+    } catch (error) {
+      toast.error(
+        isNepali ? "पासवर्ड अपडेट भएन" : "Password not updated",
+        translateError(error, { isNepali, context: "profile" }),
+      );
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmed = window.confirm(
+      isNepali
+        ? "तपाईंको खाता स्थायी रूपमा मेटिनेछ। यो पूर्ववत गर्न मिल्दैन। पक्का?"
+        : "Your account will be permanently deleted. This cannot be undone. Continue?",
+    );
+    if (!confirmed) return;
+    setIsDeleting(true);
+    try {
+      await sharedAuthApi.deleteAccount();
+      await logout();
+      window.location.href = "/";
+    } catch (error) {
+      toast.error(
+        isNepali ? "खाता मेटिएन" : "Account not deleted",
+        translateError(error, { isNepali, context: "profile" }),
+      );
+      setIsDeleting(false);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="max-w-md mx-auto text-center py-12">
@@ -374,49 +569,65 @@ export default function ProfilePage() {
       </Card>
       </motion.div>
 
-      {/* Quick-stats cards. The hires + notifications cards anchor-scroll
-          to their respective lists below (real interaction, not the old
-          self-link stubs). */}
-      <div className="grid grid-cols-2 gap-4">
-        <a
-          href="#hires-list"
-          className="block"
-          aria-label={isNepali ? "भाडाहरू" : "View Hires"}
-        >
-          <Card className="cursor-pointer hover:border-crimson-200 h-full">
-            <CardContent className="p-4 flex items-center gap-3">
-              <Briefcase className="w-5 h-5 text-blue-600" />
-              <div>
-                <div className="font-medium">
-                  {isNepali ? "भाडाहरू" : "Hires"}
-                </div>
-                <div className="text-sm text-terrain-500">
-                  {activeHires} {isNepali ? "सक्रिय" : "active"}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </a>
-        <a
-          href="#notifications-list"
-          className="block"
-          aria-label={isNepali ? "सूचना" : "View Notifications"}
-        >
-          <Card className="cursor-pointer hover:border-crimson-200 h-full">
-            <CardContent className="p-4 flex items-center gap-3">
-              <Bell className="w-5 h-5 text-amber-600" />
-              <div>
-                <div className="font-medium">
-                  {isNepali ? "सूचना" : "Notifications"}
-                </div>
-                <div className="text-sm text-terrain-500">
-                  {unreadNotifications} {isNepali ? "नयाँ" : "new"}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </a>
+      {/* Dashboard KPI strip — role-specific glance metrics. Each card
+          anchor-scrolls to the list it summarises, so the numbers are a
+          live entry point into the data, not decoration. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {kpis.map((kpi) => {
+          const Icon = kpi.icon;
+          return (
+            <a
+              key={kpi.label}
+              href={kpi.href}
+              className="block"
+              aria-label={kpi.label}
+            >
+              <Card className="cursor-pointer hover:border-crimson-200 h-full">
+                <CardContent className="p-4">
+                  <Icon className={`w-5 h-5 ${kpi.color}`} />
+                  <div className="mt-2 text-xl font-bold text-mountain-900 leading-tight">
+                    {kpi.value}
+                    {kpi.sub && (
+                      <span className="ml-1 text-xs font-normal text-terrain-500">
+                        {kpi.sub}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-xs text-terrain-500">
+                    {kpi.label}
+                  </div>
+                </CardContent>
+              </Card>
+            </a>
+          );
+        })}
       </div>
+
+      {/* Notifications quick-access — kept for both roles below the KPIs. */}
+      <a
+        href="#notifications-list"
+        className="block"
+        aria-label={isNepali ? "सूचना" : "View Notifications"}
+      >
+        <Card className="cursor-pointer hover:border-crimson-200">
+          <CardContent className="p-4 flex items-center gap-3">
+            <Bell className="w-5 h-5 text-amber-600" />
+            <div className="flex-1">
+              <div className="font-medium">
+                {isNepali ? "सूचना" : "Notifications"}
+              </div>
+              <div className="text-sm text-terrain-500">
+                {unreadNotifications} {isNepali ? "नयाँ" : "new"}
+              </div>
+            </div>
+            {unreadNotifications > 0 && (
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-crimson-700 px-2 text-xs font-semibold text-white">
+                {unreadNotifications}
+              </span>
+            )}
+          </CardContent>
+        </Card>
+      </a>
 
       <motion.div
         initial={reduceMotion ? false : { opacity: 0, y: 8 }}
@@ -527,6 +738,14 @@ export default function ProfilePage() {
                       if (!n.isRead) {
                         void markRead.mutateAsync(n.id);
                       }
+                      // Granular drill-down: a hire-related notification opens
+                      // the full request detail page.
+                      if (n.hireId) {
+                        void navigate({
+                          to: "/hires/$hireId",
+                          params: { hireId: n.hireId },
+                        });
+                      }
                     }}
                     className={`cursor-pointer rounded-lg border p-3 transition-colors ${
                       n.isRead
@@ -595,16 +814,27 @@ export default function ProfilePage() {
                       <Clock className="w-5 h-5 text-amber-600" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-mountain-900">
+                      <Link
+                        to="/hires/$hireId"
+                        params={{ hireId: hire.id }}
+                        className="font-medium text-sm text-mountain-900 hover:text-crimson-700 transition-colors block truncate"
+                      >
                         {hire.workDescription?.slice(0, 80) ||
                           (isNepali ? "(विवरण छैन)" : "(no description)")}
-                      </div>
+                      </Link>
                       <div className="text-xs text-terrain-500">
                         {formatDate(hire.hiredAt)}
                         {hire.workDate
                           ? ` · ${isNepali ? "काम मिति" : "work date"} ${formatDate(hire.workDate)}`
                           : ""}
                       </div>
+                      <Link
+                        to="/hires/$hireId"
+                        params={{ hireId: hire.id }}
+                        className="text-xs text-crimson-700 hover:underline"
+                      >
+                        {isNepali ? "विवरण हेर्नुहोस् →" : "View details →"}
+                      </Link>
                     </div>
                     <Badge variant={statusVariant(hire.status)}>
                       {statusLabel(hire.status)}
@@ -683,11 +913,21 @@ export default function ProfilePage() {
               />
             ))
           ) : (
-            <p className="text-sm text-terrain-500">
-              {isNepali
-                ? "अहिलेसम्म कुनै भाडा इतिहास उपलब्ध छैन"
-                : "No hire history available yet"}
-            </p>
+            <div className="text-center py-6">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-terrain-100">
+                <Briefcase className="h-6 w-6 text-terrain-500" />
+              </div>
+              <p className="text-sm text-terrain-500">
+                {isNepali
+                  ? "अहिलेसम्म कुनै भाडा इतिहास उपलब्ध छैन"
+                  : "No hire history available yet"}
+              </p>
+              <Link to="/search" className="mt-3 inline-block">
+                <Button size="sm">
+                  {isNepali ? "कामदार खोज्नुहोस्" : "Find workers"}
+                </Button>
+              </Link>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -701,6 +941,29 @@ export default function ProfilePage() {
           </h2>
 
           <div className="divide-y divide-terrain-200">
+            {/* Admin console — only for admins; gives mobile-web admins a way
+                in (the desktop hover menu isn't available on small screens). */}
+            {user?.role === "admin" && (
+              <Link to="/admin" className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-3">
+                  <Shield className="w-5 h-5 text-crimson-700" />
+                  <div>
+                    <div className="font-medium text-mountain-900">
+                      {isNepali ? "एडमिन कन्सोल" : "Admin console"}
+                    </div>
+                    <div className="text-sm text-terrain-500">
+                      {isNepali
+                        ? "प्रयोगकर्ता, कामदार र भाडा व्यवस्थापन"
+                        : "Manage users, workers & hires"}
+                    </div>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm">
+                  {isNepali ? "खोल्नुहोस्" : "Open"}
+                </Button>
+              </Link>
+            )}
+
             {/* Language */}
             <div className="flex items-center justify-between py-3">
               <div className="flex items-center gap-3">
@@ -771,6 +1034,103 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* Edit profile name */}
+            <div className="py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Pencil className="w-5 h-5 text-mountain-700" />
+                  <div className="font-medium text-mountain-900">
+                    {isNepali ? "प्रोफाइल सम्पादन" : "Edit profile"}
+                  </div>
+                </div>
+                {!isEditingName && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setNameDraft(user?.fullName ?? "");
+                      setNameNpDraft(user?.fullNameNp ?? "");
+                      setPhoneDraft(user?.phone ?? "");
+                      setIsEditingName(true);
+                    }}
+                  >
+                    {isNepali ? "सम्पादन" : "Edit"}
+                  </Button>
+                )}
+              </div>
+              {isEditingName && (
+                <div className="mt-3 space-y-2">
+                  <input
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    placeholder={isNepali ? "नाम (अंग्रेजी)" : "Name (English)"}
+                    className="w-full h-10 rounded-md border border-terrain-300 px-3 text-sm"
+                  />
+                  <input
+                    value={nameNpDraft}
+                    onChange={(e) => setNameNpDraft(e.target.value)}
+                    placeholder={isNepali ? "नाम (नेपाली)" : "Name (Nepali)"}
+                    className="w-full h-10 rounded-md border border-terrain-300 px-3 text-sm"
+                  />
+                  <input
+                    value={phoneDraft}
+                    onChange={(e) => setPhoneDraft(e.target.value)}
+                    placeholder={isNepali ? "फोन नम्बर" : "Phone number"}
+                    inputMode="tel"
+                    autoComplete="tel"
+                    className="w-full h-10 rounded-md border border-terrain-300 px-3 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => void handleSaveName()} disabled={isSavingName}>
+                      {isSavingName ? "..." : isNepali ? "सेभ" : "Save"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setIsEditingName(false)}
+                      disabled={isSavingName}
+                    >
+                      {isNepali ? "रद्द" : "Cancel"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Change / set password */}
+            <div className="py-3">
+              <div className="flex items-center gap-3 mb-2">
+                <KeyRound className="w-5 h-5 text-mountain-700" />
+                <div>
+                  <div className="font-medium text-mountain-900">
+                    {isNepali ? "पासवर्ड बदल्नुहोस्" : "Change password"}
+                  </div>
+                  <div className="text-sm text-terrain-500">
+                    {isNepali
+                      ? "इमेल लगइनको लागि नयाँ पासवर्ड सेट गर्नुहोस्"
+                      : "Set a new password for email sign-in"}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder={isNepali ? "नयाँ पासवर्ड" : "New password"}
+                  autoComplete="new-password"
+                  className="flex-1 h-10 rounded-md border border-terrain-300 px-3 text-sm"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => void handleChangePassword()}
+                  disabled={isSavingPassword || !newPassword}
+                >
+                  {isSavingPassword ? "..." : isNepali ? "अपडेट" : "Update"}
+                </Button>
+              </div>
+            </div>
+
             {/* Logout */}
             <div className="flex items-center justify-between py-3">
               <div className="flex items-center gap-3">
@@ -788,6 +1148,32 @@ export default function ProfilePage() {
                 }}
               >
                 {isNepali ? "लगआउट" : "Logout"}
+              </Button>
+            </div>
+
+            {/* Delete account (destructive, permanent) */}
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-3">
+                <Trash2 className="w-5 h-5 text-red-600" />
+                <div>
+                  <div className="font-medium text-red-700">
+                    {isNepali ? "खाता मेटाउनुहोस्" : "Delete account"}
+                  </div>
+                  <div className="text-sm text-terrain-500">
+                    {isNepali
+                      ? "स्थायी रूपमा हटाइन्छ, पूर्ववत हुँदैन"
+                      : "Permanent and cannot be undone"}
+                  </div>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-300"
+                onClick={() => void handleDeleteAccount()}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "..." : isNepali ? "मेटाउनुहोस्" : "Delete"}
               </Button>
             </div>
           </div>
@@ -858,6 +1244,13 @@ function HireHistoryRow({
           <div className="text-sm text-terrain-500">
             {formatDate(hire.hiredAt)}
           </div>
+          <Link
+            to="/hires/$hireId"
+            params={{ hireId: hire.id }}
+            className="text-xs text-crimson-700 hover:underline"
+          >
+            {isNepali ? "विवरण हेर्नुहोस् →" : "View details →"}
+          </Link>
         </div>
         <Badge variant={statusVariant(hire.status)}>
           {statusLabel(hire.status)}

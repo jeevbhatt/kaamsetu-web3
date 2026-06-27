@@ -17,6 +17,14 @@ export interface WorkerFilters {
   minRating?: number;
   maxDailyRate?: number;
   search?: string;
+  // Proximity anchor for smart ranking — the SEARCHER's own location. Drives
+  // the proximity term in `search_workers_ranked` independently of the hard
+  // location filters above, so nearby workers rank first even when filters are
+  // coarse/unset. Optional; falls back to the filter location server-side.
+  anchorProvinceId?: number;
+  anchorDistrictId?: number;
+  anchorLocalUnitId?: number;
+  anchorWardNo?: number;
   // Server-side ordering. Used by the "Most Hired" listing to rank by
   // total_hires; defaults to newest-first when unset.
   sortBy?: "total_hires" | "avg_rating" | "daily_rate_npr" | "created_at";
@@ -182,19 +190,87 @@ export const workersApi = {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    let query = supabase
-      .from("worker_profiles")
-      .select(
-        `
+    const relationSelect = `
         *,
         user:users(full_name, full_name_np, avatar_url),
         job_category:job_categories(name_en, name_np, icon),
         province:provinces(name_en, name_np),
         district:districts(name_en, name_np),
         local_unit:local_units(name_en, name_np, unit_type)
-      `,
-        { count: "exact" },
-      )
+      `;
+
+    // ── Smart serverless ranking ─────────────────────────────────────────
+    // Default ordering uses the proximity-first composite score computed by
+    // the `search_workers_ranked` Postgres function (runs inside Supabase, no
+    // app server). The RPC returns the ranked page of ids + the total match
+    // count; we hydrate the full rows (with relations) and preserve rank order.
+    // Skipped when the caller asked for an explicit sort (e.g. "Most Hired"),
+    // and it transparently falls back to the plain query below if the function
+    // isn't deployed yet or errors — so behaviour degrades gracefully.
+    if (!filters.sortBy) {
+      try {
+        const { data: ranked, error: rpcError } = await (supabase as any).rpc(
+          "search_workers_ranked",
+          {
+            p_province_id: filters.provinceId ?? null,
+            p_district_id: filters.districtId ?? null,
+            p_local_unit_id: filters.localUnitId ?? null,
+            p_ward_no: filters.wardNo ?? null,
+            p_job_category_id: filters.jobCategoryId ?? null,
+            p_available: filters.isAvailable ?? null,
+            p_search: filters.search?.trim() || null,
+            p_limit: pageSize,
+            p_offset: from,
+            p_anchor_province_id: filters.anchorProvinceId ?? null,
+            p_anchor_district_id: filters.anchorDistrictId ?? null,
+            p_anchor_local_unit_id: filters.anchorLocalUnitId ?? null,
+            p_anchor_ward_no: filters.anchorWardNo ?? null,
+          },
+        );
+        if (rpcError) throw rpcError;
+
+        const rankedRows = (ranked ?? []) as Array<{
+          id: string;
+          score: number;
+          total_count: number | string;
+        }>;
+        const total = Number(rankedRows[0]?.total_count ?? 0);
+
+        if (rankedRows.length === 0) {
+          return { data: [], total, page, pageSize, hasMore: false };
+        }
+
+        const ids = rankedRows.map((r) => r.id);
+        const { data: full, error: fullError } = await supabase
+          .from("worker_profiles")
+          .select(relationSelect)
+          .in("id", ids);
+        if (fullError) throw fullError;
+
+        const byId = new Map(
+          ((full ?? []) as WorkerRow[]).map((row) => [row.id, mapWorkerRow(row)]),
+        );
+        // Re-apply the rank order the RPC returned (a SQL `IN (...)` does not
+        // guarantee row order, so we key off the ranked id list).
+        const rankedData = ids
+          .map((id) => byId.get(id))
+          .filter((w): w is WorkerDisplay => Boolean(w));
+
+        return {
+          data: rankedData,
+          total,
+          page,
+          pageSize,
+          hasMore: from + rankedData.length < total,
+        };
+      } catch {
+        // Fall through to the plain query (newest-first) below.
+      }
+    }
+
+    let query = supabase
+      .from("worker_profiles")
+      .select(relationSelect, { count: "exact" })
       // Self-serve model: visibility is enforced by RLS (owning user must be
       // active), NOT by is_approved. is_approved is only a "Verified" badge.
       .range(from, to);

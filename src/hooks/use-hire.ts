@@ -239,6 +239,14 @@ export function useSubmitHireReviewMutation() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.hires.byHirer(hire.hirerId),
       });
+      // The review write triggers update_worker_stats, so the worker's
+      // avg_rating / total_reviews change server-side. Invalidate the worker
+      // caches too, otherwise the rating shown on their profile/cards (and the
+      // dashboard KPI) stays stale until an unrelated refetch.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workers.detail(hire.workerId),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workers.all });
     },
   });
 }

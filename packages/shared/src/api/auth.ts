@@ -29,6 +29,22 @@ export const authApi = {
   },
 
   /**
+   * Re-send the email-confirmation link for a signed-up-but-unconfirmed
+   * account. Used when a user tries to log in and gets "Email not confirmed"
+   * (the first confirmation mail may have been missed or landed in spam).
+   */
+  async resendConfirmation(email: string, redirectTo?: string) {
+    const supabase = getSupabase();
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: redirectTo ? { emailRedirectTo: redirectTo } : undefined,
+    });
+    if (error) throw error;
+    return { success: true };
+  },
+
+  /**
    * Verify OTP and complete login
    */
   async verifyOtp(phone: string, token: string) {
@@ -98,6 +114,19 @@ export const authApi = {
     const supabase = getSupabase();
     const { data, error } = await supabase.auth.updateUser({
       password: newPassword,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Permanently delete the current user's account via the delete-account
+   * edge function (which uses the service role to remove the auth user).
+   */
+  async deleteAccount() {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.functions.invoke("delete-account", {
+      body: {},
     });
     if (error) throw error;
     return data;

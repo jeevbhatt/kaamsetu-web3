@@ -8,6 +8,7 @@ export interface WorkerFilters {
   provinceId?: number;
   districtId?: number;
   localUnitId?: number;
+  wardNo?: number;
   jobCategoryId?: number;
   isAvailable?: boolean;
   search?: string;
@@ -62,6 +63,7 @@ async function fetchWorkers(filters: WorkerFilters, page: number): Promise<{ dat
   if (filters.provinceId) query = query.eq("province_id", filters.provinceId);
   if (filters.districtId) query = query.eq("district_id", filters.districtId);
   if (filters.localUnitId) query = query.eq("local_unit_id", filters.localUnitId);
+  if (filters.wardNo) query = query.eq("ward_no", filters.wardNo);
   if (filters.jobCategoryId) query = query.eq("job_category_id", filters.jobCategoryId);
   if (filters.isAvailable !== undefined) query = query.eq("is_available", filters.isAvailable);
 

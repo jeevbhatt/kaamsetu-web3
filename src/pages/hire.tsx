@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useUIStore } from "../store";
+import { useAuthStore } from "../store/auth-store";
 import { Button, Card, CardContent, Input } from "../components/ui";
-import { ArrowLeft, Calendar, Database } from "lucide-react";
+import { ArrowLeft, Calendar, Database, Briefcase, MapPin } from "lucide-react";
 import {
   createIpFingerprint,
   hasHireIpLock,
@@ -13,8 +14,10 @@ import {
   resolveClientIpAddress,
   setHireIpLock,
   translateError,
+  getSupabaseClient,
 } from "../lib";
-import { useCreateHireMutation } from "../hooks";
+import { useCreateHireMutation, useLocalUnits } from "../hooks";
+import { provinces, getDistrictsByProvince } from "@shram-sewa/shared";
 import NepaliDate from "nepali-date";
 
 // UI-shape schema for the hire form. Distinct from the API schema
@@ -68,11 +71,52 @@ type ParsedHireFormValues = z.output<typeof hireFormSchema>;
 export default function HirePage() {
   const { workerId } = useParams({ from: "/hire/$workerId" });
   const { locale } = useUIStore();
+  const { user, isAuthenticated } = useAuthStore();
   const isNepali = locale === "ne";
   const backendConfigured = isSupabaseConfigured();
+  const isWorkerRole = isAuthenticated && user?.role === "worker";
   const createHireMutation = useCreateHireMutation();
   const [isSuccess, setIsSuccess] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  // Work location (where the hirer wants the job done). Optional but lets the
+  // worker see where the work is. Cascading province → district → local unit.
+  const [provinceId, setProvinceId] = useState<number | undefined>(undefined);
+  const [districtId, setDistrictId] = useState<number | undefined>(undefined);
+  const [localUnitId, setLocalUnitId] = useState<number | undefined>(undefined);
+  const provinceDistricts = provinceId
+    ? getDistrictsByProvince(provinceId)
+    : [];
+  const localUnitsQuery = useLocalUnits(districtId);
+  // Fast apply: remember the hirer's location for next time and pre-fill it.
+  const [rememberLocation, setRememberLocation] = useState(true);
+  const [prefilledFromSaved, setPrefilledFromSaved] = useState(false);
+
+  // Auto-fill the location selects from the hirer's saved home location.
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id || isWorkerRole || !backendConfigured) {
+      return;
+    }
+    let active = true;
+    void (async () => {
+      try {
+        const { data } = await (getSupabaseClient() as any)
+          .from("users")
+          .select("home_province_id, home_district_id, home_local_unit_id")
+          .eq("id", user.id)
+          .single();
+        if (!active || !data) return;
+        if (data.home_province_id) setProvinceId(data.home_province_id);
+        if (data.home_district_id) setDistrictId(data.home_district_id);
+        if (data.home_local_unit_id) setLocalUnitId(data.home_local_unit_id);
+        if (data.home_province_id) setPrefilledFromSaved(true);
+      } catch {
+        // No saved location yet — leave the selects blank.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, user?.id, isWorkerRole, backendConfigured]);
 
   const form = useForm<HireFormValues>({
     resolver: zodResolver(hireFormSchema),
@@ -131,7 +175,27 @@ export default function HirePage() {
         agreedRateNpr: parsed.agreedRateNpr,
         workDate: new Date(parsed.workDate),
         workDurationDays: parsed.workDurationDays,
+        hireProvinceId: provinceId,
+        hireDistrictId: districtId,
+        hireLocalUnitId: localUnitId,
       });
+
+      // Save the chosen location to the hirer's profile for fast apply later.
+      if (rememberLocation && provinceId && user?.id) {
+        try {
+          await (getSupabaseClient() as any)
+            .from("users")
+            .update({
+              home_province_id: provinceId,
+              home_district_id: districtId ?? null,
+              home_local_unit_id: localUnitId ?? null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+        } catch {
+          // Non-fatal: the hire still succeeded.
+        }
+      }
 
       if (hirerIp) {
         setHireIpLock(workerId, hirerIp, ipFingerprint);
@@ -144,6 +208,41 @@ export default function HirePage() {
       setSubmitError(translateError(error, { isNepali, context: "hire" }));
     }
   };
+
+  // Worker-mode accounts cannot hire. The DB + edge function already block it;
+  // this is the friendly UI gate so they aren't shown a form that will fail.
+  if (isWorkerRole) {
+    return (
+      <div className="max-w-lg mx-auto space-y-6">
+        <Link
+          to="/worker/$workerId"
+          params={{ workerId }}
+          className="inline-flex items-center gap-2 text-sm text-terrain-500 hover:text-crimson-700"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          {isNepali ? "फिर्ता" : "Back"}
+        </Link>
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Briefcase className="w-10 h-10 mx-auto mb-3 text-crimson-700" />
+            <h1 className="text-xl font-bold text-mountain-900 mb-2">
+              {isNepali ? "कामदार मोडमा भाडामा लिन मिल्दैन" : "Hiring is disabled in worker mode"}
+            </h1>
+            <p className="text-terrain-500 mb-6">
+              {isNepali
+                ? "भाडामा लिन कृपया रोजगारदाता मोडमा बदल्नुहोस्।"
+                : "To hire workers, switch your account to hirer mode."}
+            </p>
+            <Link to="/profile">
+              <Button>
+                {isNepali ? "प्रोफाइलमा जानुहोस्" : "Go to profile"}
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (isSuccess) {
     return (
@@ -260,6 +359,89 @@ export default function HirePage() {
                   {fieldErrorMessage("workDurationDays")}
                 </p>
               )}
+            </div>
+
+            {/* Work location (optional) — cascading province → district → ward */}
+            <div className="space-y-3">
+              <label className="flex items-center gap-1.5 text-sm font-medium text-mountain-700">
+                <MapPin className="w-4 h-4" />
+                {isNepali ? "काम गर्ने स्थान (वैकल्पिक)" : "Work location (optional)"}
+              </label>
+              {prefilledFromSaved && (
+                <p className="text-xs text-emerald-700">
+                  {isNepali
+                    ? "तपाईंको सुरक्षित स्थानबाट स्वतः भरियो।"
+                    : "Auto-filled from your saved location."}
+                </p>
+              )}
+              <select
+                value={provinceId ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value ? Number(e.target.value) : undefined;
+                  setProvinceId(v);
+                  setDistrictId(undefined);
+                  setLocalUnitId(undefined);
+                }}
+                className="w-full h-10 rounded-md border border-terrain-300 px-3"
+              >
+                <option value="">
+                  {isNepali ? "प्रदेश छान्नुहोस्" : "Select province"}
+                </option>
+                {provinces.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {isNepali ? p.nameNp : p.nameEn}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={districtId ?? ""}
+                disabled={!provinceId}
+                onChange={(e) => {
+                  const v = e.target.value ? Number(e.target.value) : undefined;
+                  setDistrictId(v);
+                  setLocalUnitId(undefined);
+                }}
+                className="w-full h-10 rounded-md border border-terrain-300 px-3 disabled:bg-terrain-50 disabled:text-terrain-400"
+              >
+                <option value="">
+                  {isNepali ? "जिल्ला छान्नुहोस्" : "Select district"}
+                </option>
+                {provinceDistricts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {isNepali ? d.nameNp : d.nameEn}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={localUnitId ?? ""}
+                disabled={!districtId || localUnitsQuery.isLoading}
+                onChange={(e) =>
+                  setLocalUnitId(
+                    e.target.value ? Number(e.target.value) : undefined,
+                  )
+                }
+                className="w-full h-10 rounded-md border border-terrain-300 px-3 disabled:bg-terrain-50 disabled:text-terrain-400"
+              >
+                <option value="">
+                  {isNepali ? "स्थानीय तह छान्नुहोस्" : "Select local unit"}
+                </option>
+                {(localUnitsQuery.data || []).map((u: { id: number; name_en: string; name_np?: string | null }) => (
+                  <option key={u.id} value={u.id}>
+                    {isNepali ? (u.name_np ?? u.name_en) : u.name_en}
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-center gap-2 text-sm text-terrain-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rememberLocation}
+                  onChange={(e) => setRememberLocation(e.target.checked)}
+                  className="h-4 w-4 rounded border-terrain-300 accent-crimson-700"
+                />
+                {isNepali
+                  ? "अर्को पटक छिटो भर्न यो स्थान सम्झनुहोस्"
+                  : "Remember this location for faster hiring next time"}
+              </label>
             </div>
 
             <div>

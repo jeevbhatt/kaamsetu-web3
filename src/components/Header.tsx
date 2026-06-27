@@ -10,10 +10,11 @@ import { useUIStore } from "../store";
 import { useAuthStore } from "../store/auth-store";
 import { motion } from "framer-motion";
 import { NotificationBell } from "./NotificationBell";
+import { ProfileMenu } from "./ProfileMenu";
 
 export function Header() {
   const { locale, toggleLocale } = useUIStore();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const isNepali = locale === "ne";
 
   return (
@@ -81,18 +82,9 @@ export function Header() {
             {/* Notifications (only renders + subscribes when authenticated) */}
             <NotificationBell />
 
-            {/* Auth */}
+            {/* Auth — hover-activated profile menu when signed in */}
             {isAuthenticated ? (
-              <Link to="/profile" preload="intent">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 rounded-full"
-                >
-                  <User className="w-4 h-4" />
-                  {user?.fullName?.split(" ")[0] ?? "Profile"}
-                </Button>
-              </Link>
+              <ProfileMenu />
             ) : (
               <Link to="/login" preload="intent">
                 <Button size="sm" className="gap-2 rounded-full">

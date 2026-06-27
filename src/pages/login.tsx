@@ -98,6 +98,36 @@ function generatePassword() {
     .join("");
 }
 
+// Trigger the browser's "save password?" prompt (Google Password Manager /
+// Chrome, Safari Keychain, etc.) after a successful email sign-in or sign-up.
+// In an SPA the form submit is intercepted by React + a fetch to Supabase, so
+// the browser's passive heuristics usually MISS the credential. The Credential
+// Management API stores it explicitly, which surfaces the save prompt.
+async function savePasswordCredential(email: string, password: string) {
+  try {
+    if (typeof window === "undefined") return;
+    const PasswordCredentialCtor = (
+      window as unknown as {
+        PasswordCredential?: new (data: {
+          id: string;
+          password: string;
+          name?: string;
+        }) => Credential;
+      }
+    ).PasswordCredential;
+    if (PasswordCredentialCtor && navigator.credentials?.store) {
+      const credential = new PasswordCredentialCtor({
+        id: email,
+        password,
+        name: email,
+      });
+      await navigator.credentials.store(credential);
+    }
+  } catch {
+    // Best-effort: unsupported browser or user dismissal — ignore.
+  }
+}
+
 export default function LoginPage() {
   const { locale, setLocale } = useUIStore();
   const { login } = useAuthStore();
@@ -116,6 +146,12 @@ export default function LoginPage() {
   const [emailMode, setEmailMode] = useState<"signin" | "register">("signin");
   // Friendly info banner (e.g. "check your email to confirm" / reset sent).
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  // Set when a sign-in fails because the email isn't confirmed yet — drives
+  // the "Resend confirmation email" affordance.
+  const [confirmPendingEmail, setConfirmPendingEmail] = useState<string | null>(
+    null,
+  );
+  const [isResending, setIsResending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const phoneForm = useForm<PhoneFormValues>({
@@ -207,6 +243,8 @@ export default function LoginPage() {
 
   const handleEmailLogin = async (values: EmailFormValues) => {
     setSubmitError("");
+    setInfoMessage(null);
+    setConfirmPendingEmail(null);
     if (!ensureBackend()) return;
 
     setIsLoading(true);
@@ -216,6 +254,17 @@ export default function LoginPage() {
 
     if (!isLoggedIn) {
       const rawError = useAuthStore.getState().authError ?? "";
+      // Unconfirmed email → surface a clear message + a resend option instead
+      // of the raw "Email not confirmed" string.
+      if (/not confirmed|email_not_confirmed/i.test(rawError)) {
+        setConfirmPendingEmail(values.email);
+        setSubmitError(
+          isNepali
+            ? "तपाईंको इमेल अझै पुष्टि भएको छैन। इनबक्स (र स्पाम) जाँच गर्नुहोस्, वा तलको बटनबाट पुष्टिकरण इमेल पुनः पठाउनुहोस्।"
+            : "Your email isn't confirmed yet. Check your inbox (and spam) for the link, or resend it below.",
+        );
+        return;
+      }
       setSubmitError(
         rawError ||
           (isNepali
@@ -225,7 +274,29 @@ export default function LoginPage() {
       return;
     }
 
+    await savePasswordCredential(values.email, values.password);
     navigate({ to: "/profile" });
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!confirmPendingEmail || !ensureBackend()) return;
+    setIsResending(true);
+    setSubmitError("");
+    try {
+      await authApi.resendConfirmation(
+        confirmPendingEmail,
+        getAuthRedirectUrl("/profile"),
+      );
+      setInfoMessage(
+        isNepali
+          ? `पुष्टिकरण इमेल ${confirmPendingEmail} मा पुनः पठाइयो।`
+          : `Confirmation email resent to ${confirmPendingEmail}.`,
+      );
+    } catch (error) {
+      setSubmitError(translateError(error, { isNepali, context: "login" }));
+    } finally {
+      setIsResending(false);
+    }
   };
 
   // Register a brand-new account with email + password. On success the
@@ -245,6 +316,8 @@ export default function LoginPage() {
     setIsLoading(false);
 
     if (result.kind === "session") {
+      // Account created + signed in → offer to save the new credential.
+      await savePasswordCredential(values.email, values.password);
       navigate({ to: "/profile" });
       return;
     }
@@ -350,6 +423,7 @@ export default function LoginPage() {
     setEmailMode(mode);
     setSubmitError("");
     setInfoMessage(null);
+    setConfirmPendingEmail(null);
     emailForm.clearErrors();
   };
 
@@ -573,6 +647,22 @@ export default function LoginPage() {
                 </div>
                 {submitError && (
                   <p className="text-sm text-red-600">{submitError}</p>
+                )}
+                {confirmPendingEmail && (
+                  <button
+                    type="button"
+                    onClick={() => void handleResendConfirmation()}
+                    disabled={isResending || !backendConfigured}
+                    className="w-full rounded-md border border-crimson-200 bg-crimson-50/50 py-2 text-sm font-medium text-crimson-700 hover:bg-crimson-50 disabled:opacity-60"
+                  >
+                    {isResending
+                      ? isNepali
+                        ? "पठाउँदै..."
+                        : "Resending..."
+                      : isNepali
+                        ? "पुष्टिकरण इमेल पुनः पठाउनुहोस्"
+                        : "Resend confirmation email"}
+                  </button>
                 )}
                 <Button
                   type="submit"

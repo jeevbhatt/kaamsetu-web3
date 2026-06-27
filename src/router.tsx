@@ -42,6 +42,8 @@ const GuidelinesPage = lazy(() => import("./pages/guidelines"));
 const ContactPage = lazy(() => import("./pages/contact"));
 const OnboardingPage = lazy(() => import("./pages/onboarding"));
 const ResetPasswordPage = lazy(() => import("./pages/reset-password"));
+const HireDetailPage = lazy(() => import("./pages/hire-detail"));
+const AdminPage = lazy(() => import("./pages/admin"));
 
 // Page transition variants (from AGENTS.md section 9)
 const pageVariants: Variants = {
@@ -340,6 +342,28 @@ async function requireProfile() {
   }
 }
 
+// Admin-only. requireAuth first, then verify the elevated role. Non-admins
+// (including unauthenticated users, already bounced by requireAuth) are sent
+// home. Server-side admin_all_* RLS is the real enforcement; this is the gate.
+async function requireAdmin() {
+  await requireAuth();
+  const { user } = useAuthStore.getState();
+  if (user?.role !== "admin") {
+    throw redirect({ to: "/" });
+  }
+}
+
+const adminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin",
+  beforeLoad: requireAdmin,
+  component: () => (
+    <Suspense fallback={<PageLoader />}>
+      <AdminPage />
+    </Suspense>
+  ),
+});
+
 // Public: the password-reset link must be reachable without an existing
 // session. detectSessionInUrl establishes a recovery session from the URL
 // hash, which the page itself reads — so no guard here.
@@ -401,6 +425,17 @@ const hireRoute = createRoute({
   component: () => (
     <Suspense fallback={<PageLoader />}>
       <HirePage />
+    </Suspense>
+  ),
+});
+
+const hireDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hires/$hireId",
+  beforeLoad: requireAuth,
+  component: () => (
+    <Suspense fallback={<PageLoader />}>
+      <HireDetailPage />
     </Suspense>
   ),
 });
@@ -505,6 +540,8 @@ const routeTree = rootRoute.addChildren([
   workerRoute,
   hireRoute,
   profileRoute,
+  hireDetailRoute,
+  adminRoute,
   onboardingRoute,
   resetPasswordRoute,
   loginRoute,
