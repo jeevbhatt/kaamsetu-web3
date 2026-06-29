@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { setupHireOutboxSync } from "./lib/hire-outbox";
 import { queryClient, setupQueryCachePersistence } from "./lib/query-client";
 import { setupWebGlobalErrorMonitoring } from "./lib/monitoring";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { router } from "./router";
 
 export default function App() {
@@ -15,10 +16,12 @@ export default function App() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <MotionConfig reducedMotion="user">
-        <RouterProvider router={router} />
-      </MotionConfig>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <MotionConfig reducedMotion="user">
+          <RouterProvider router={router} />
+        </MotionConfig>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

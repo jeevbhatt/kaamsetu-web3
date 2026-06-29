@@ -118,6 +118,14 @@ export function HireModal({ isOpen, onClose, worker }: HireModalProps) {
       if (hirerIp) {
         setHireIpLock(worker.id, hirerIp, ipFingerprint);
       }
+      // Confirm the completed action — without this the modal just closed and
+      // the hirer had no signal their request actually went through.
+      toast.success(
+        isNepali ? "अनुरोध पठाइयो" : "Request sent",
+        isNepali
+          ? "कामदारलाई तपाईंको भाडा अनुरोध पठाइयो।"
+          : "Your hire request was sent to the worker.",
+      );
       onClose();
     } catch (mutationError) {
       if (isLikelyNetworkCutoffError(mutationError)) {
