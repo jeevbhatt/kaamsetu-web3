@@ -9,11 +9,24 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUIStore } from "../store";
 import { Button, Card, CardContent, Badge } from "../components/ui";
-import { Users, Briefcase, ClipboardList, Trash2, ShieldCheck, RefreshCw } from "lucide-react";
+import {
+  Users,
+  Briefcase,
+  ClipboardList,
+  Trash2,
+  ShieldCheck,
+  RefreshCw,
+  LayoutDashboard,
+  Search,
+} from "lucide-react";
 import { getSupabaseClient } from "../lib";
 import { useToast } from "../components/ToastContainer";
+import { useDebouncedValue } from "../hooks";
 
-type Tab = "users" | "workers" | "hires";
+type Tab = "overview" | "users" | "workers" | "hires";
+
+// PostgREST .or() treats commas/parens as syntax — strip them from user input.
+const sanitizeSearch = (s: string) => s.replace(/[,()%]/g, "").trim();
 
 type AdminUser = {
   id: string;
@@ -44,58 +57,206 @@ type AdminHire = {
   hired_at: string;
 };
 
+const PAGE_SIZE = 25;
+
+type PagedResult<T> = { rows: T[]; count: number };
+
 export default function AdminPage() {
   const { locale } = useUIStore();
   const isNepali = locale === "ne";
   const toast = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>("users");
+  const [tab, setTab] = useState<Tab>("overview");
+  // Each tab remembers its own page so switching tabs doesn't lose position.
+  const [pages, setPages] = useState<Record<Tab, number>>({
+    overview: 0,
+    users: 0,
+    workers: 0,
+    hires: 0,
+  });
+  const setPage = (key: Tab, page: number) =>
+    setPages((prev) => ({ ...prev, [key]: Math.max(0, page) }));
+  const pageRange = (page: number) =>
+    [page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1] as const;
+
+  // Search + per-tab filters. Any change resets that tab to page 0.
+  const [searchInput, setSearchInput] = useState("");
+  const search = sanitizeSearch(useDebouncedValue(searchInput, 300));
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [userStatusFilter, setUserStatusFilter] = useState("all");
+  const [approvalFilter, setApprovalFilter] = useState("all");
+  const [hireStatusFilter, setHireStatusFilter] = useState("all");
+  const onSearchChange = (value: string) => {
+    setSearchInput(value);
+    setPages((prev) => ({ ...prev, users: 0, workers: 0, hires: 0 }));
+  };
+  const withPageReset =
+    (key: Tab, setter: (v: string) => void) => (value: string) => {
+      setter(value);
+      setPage(key, 0);
+    };
 
   const supabase = () => getSupabaseClient();
 
-  // ── Queries ──────────────────────────────────────────────────────────
-  const usersQuery = useQuery({
-    queryKey: ["admin", "users"],
-    queryFn: async (): Promise<AdminUser[]> => {
-      const { data, error } = await supabase()
-        .from("users")
-        .select("id, full_name, phone, role, is_verified, is_active, created_at")
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (error) throw error;
-      return (data ?? []) as AdminUser[];
+  // ── Overview stats (head-only count queries — cheap) ─────────────────
+  const overviewQuery = useQuery({
+    queryKey: ["admin", "overview"],
+    enabled: tab === "overview",
+    queryFn: async () => {
+      const count = async (
+        table: string,
+        apply?: (q: any) => any,
+      ): Promise<number> => {
+        let q: any = supabase()
+          .from(table)
+          .select("id", { count: "exact", head: true });
+        if (apply) q = apply(q);
+        const { count: n, error } = await q;
+        if (error) throw error;
+        return n ?? 0;
+      };
+      const [
+        totalUsers,
+        totalWorkers,
+        availableWorkers,
+        totalHires,
+        pendingHires,
+        completedHires,
+      ] = await Promise.all([
+        count("users"),
+        count("worker_profiles"),
+        count("worker_profiles", (q) => q.eq("is_available", true)),
+        count("hire_records"),
+        count("hire_records", (q) => q.eq("status", "pending")),
+        count("hire_records", (q) => q.eq("status", "completed")),
+      ]);
+      return {
+        totalUsers,
+        totalWorkers,
+        availableWorkers,
+        totalHires,
+        pendingHires,
+        completedHires,
+      };
     },
+  });
+
+  // ── Queries (server-side pagination + search + filters) ──────────────
+  const usersQuery = useQuery({
+    queryKey: ["admin", "users", pages.users, search, roleFilter, userStatusFilter],
+    enabled: tab === "users",
+    queryFn: async (): Promise<PagedResult<AdminUser>> => {
+      const [from, to] = pageRange(pages.users);
+      let q = supabase()
+        .from("users")
+        .select("id, full_name, phone, role, is_verified, is_active, created_at", {
+          count: "exact",
+        });
+      if (search) {
+        q = q.or(
+          `full_name.ilike.*${search}*,full_name_np.ilike.*${search}*,phone.ilike.*${search}*`,
+        );
+      }
+      if (roleFilter !== "all") q = q.eq("role", roleFilter);
+      if (userStatusFilter !== "all")
+        q = q.eq("is_active", userStatusFilter === "active");
+      const { data, error, count } = await q
+        .order("created_at", { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      return { rows: (data ?? []) as AdminUser[], count: count ?? 0 };
+    },
+    placeholderData: (prev) => prev,
   });
 
   const workersQuery = useQuery({
-    queryKey: ["admin", "workers"],
-    queryFn: async (): Promise<AdminWorker[]> => {
-      const { data, error } = await supabase()
+    queryKey: ["admin", "workers", pages.workers, search, approvalFilter],
+    queryFn: async (): Promise<PagedResult<AdminWorker>> => {
+      const [from, to] = pageRange(pages.workers);
+      // users!inner lets the name/phone search filter on the joined table.
+      let q = supabase()
         .from("worker_profiles")
         .select(
-          "id, user_id, is_approved, is_available, total_hires, daily_rate_npr, users(full_name, phone)",
-        )
+          "id, user_id, is_approved, is_available, total_hires, daily_rate_npr, users!inner(full_name, phone)",
+          { count: "exact" },
+        );
+      if (search) {
+        q = q.or(`full_name.ilike.*${search}*,phone.ilike.*${search}*`, {
+          foreignTable: "users",
+        });
+      }
+      if (approvalFilter !== "all")
+        q = q.eq("is_approved", approvalFilter === "approved");
+      const { data, error, count } = await q
         .order("created_at", { ascending: false })
-        .limit(200);
+        .range(from, to);
       if (error) throw error;
-      return (data ?? []) as unknown as AdminWorker[];
+      return {
+        rows: (data ?? []) as unknown as AdminWorker[],
+        count: count ?? 0,
+      };
     },
     enabled: tab === "workers",
+    placeholderData: (prev) => prev,
   });
 
   const hiresQuery = useQuery({
-    queryKey: ["admin", "hires"],
-    queryFn: async (): Promise<AdminHire[]> => {
-      const { data, error } = await supabase()
+    queryKey: ["admin", "hires", pages.hires, hireStatusFilter],
+    queryFn: async (): Promise<PagedResult<AdminHire>> => {
+      const [from, to] = pageRange(pages.hires);
+      let q = supabase()
         .from("hire_records")
-        .select("id, worker_id, hirer_id, status, agreed_rate_npr, hired_at")
+        .select("id, worker_id, hirer_id, status, agreed_rate_npr, hired_at", {
+          count: "exact",
+        });
+      if (hireStatusFilter !== "all") q = q.eq("status", hireStatusFilter);
+      const { data, error, count } = await q
         .order("hired_at", { ascending: false })
-        .limit(200);
+        .range(from, to);
       if (error) throw error;
-      return (data ?? []) as AdminHire[];
+      return { rows: (data ?? []) as AdminHire[], count: count ?? 0 };
     },
     enabled: tab === "hires",
+    placeholderData: (prev) => prev,
   });
+
+  // Shared pager footer: "Showing X–Y of Z" + Prev/Next.
+  const Pager = ({ tabKey, count }: { tabKey: Tab; count: number }) => {
+    const page = pages[tabKey];
+    const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+    const first = count === 0 ? 0 : page * PAGE_SIZE + 1;
+    const last = Math.min(count, (page + 1) * PAGE_SIZE);
+    return (
+      <div className="flex items-center justify-between border-t border-terrain-100 px-4 py-2 text-xs text-terrain-500">
+        <span>
+          {isNepali
+            ? `${count} मध्ये ${first}–${last}`
+            : `Showing ${first}–${last} of ${count}`}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={page === 0}
+            onClick={() => setPage(tabKey, page - 1)}
+          >
+            {isNepali ? "अघिल्लो" : "Prev"}
+          </Button>
+          <span>
+            {page + 1} / {totalPages}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={page + 1 >= totalPages}
+            onClick={() => setPage(tabKey, page + 1)}
+          >
+            {isNepali ? "अर्को" : "Next"}
+          </Button>
+        </div>
+      </div>
+    );
+  };
 
   // ── Mutations ────────────────────────────────────────────────────────
   const runMutation = (key: string[]) => ({
@@ -149,10 +310,14 @@ export default function AdminPage() {
   });
 
   const tabs: { key: Tab; label: string; labelNp: string; icon: typeof Users }[] = [
+    { key: "overview", label: "Overview", labelNp: "अवलोकन", icon: LayoutDashboard },
     { key: "users", label: "Users", labelNp: "प्रयोगकर्ता", icon: Users },
     { key: "workers", label: "Workers", labelNp: "कामदार", icon: Briefcase },
     { key: "hires", label: "Hires", labelNp: "भाडा", icon: ClipboardList },
   ];
+
+  const selectCls =
+    "rounded-lg border border-terrain-300 bg-white px-2 py-1.5 text-sm text-mountain-900";
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -191,6 +356,132 @@ export default function AdminPage() {
         ))}
       </div>
 
+      {tab !== "overview" && (
+        <div className="flex flex-wrap items-center gap-2">
+          {tab !== "hires" && (
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-terrain-400" />
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder={
+                  isNepali ? "नाम वा फोन खोज्नुहोस्…" : "Search name or phone…"
+                }
+                className="w-full rounded-lg border border-terrain-300 bg-white py-1.5 pl-8 pr-3 text-sm text-mountain-900 placeholder:text-terrain-400"
+                aria-label={isNepali ? "खोज्नुहोस्" : "Search"}
+              />
+            </div>
+          )}
+          {tab === "users" && (
+            <>
+              <select
+                value={roleFilter}
+                onChange={(e) => withPageReset("users", setRoleFilter)(e.target.value)}
+                className={selectCls}
+                aria-label={isNepali ? "भूमिका" : "Role"}
+              >
+                <option value="all">{isNepali ? "सबै भूमिका" : "All roles"}</option>
+                <option value="hirer">hirer</option>
+                <option value="worker">worker</option>
+                <option value="admin">admin</option>
+              </select>
+              <select
+                value={userStatusFilter}
+                onChange={(e) =>
+                  withPageReset("users", setUserStatusFilter)(e.target.value)
+                }
+                className={selectCls}
+                aria-label={isNepali ? "स्थिति" : "Status"}
+              >
+                <option value="all">{isNepali ? "सबै स्थिति" : "All status"}</option>
+                <option value="active">{isNepali ? "सक्रिय" : "Active"}</option>
+                <option value="inactive">{isNepali ? "निष्क्रिय" : "Inactive"}</option>
+              </select>
+            </>
+          )}
+          {tab === "workers" && (
+            <select
+              value={approvalFilter}
+              onChange={(e) =>
+                withPageReset("workers", setApprovalFilter)(e.target.value)
+              }
+              className={selectCls}
+              aria-label={isNepali ? "स्वीकृति" : "Approval"}
+            >
+              <option value="all">{isNepali ? "सबै" : "All"}</option>
+              <option value="approved">{isNepali ? "स्वीकृत" : "Approved"}</option>
+              <option value="pending">{isNepali ? "पेन्डिङ" : "Pending"}</option>
+            </select>
+          )}
+          {tab === "hires" && (
+            <select
+              value={hireStatusFilter}
+              onChange={(e) =>
+                withPageReset("hires", setHireStatusFilter)(e.target.value)
+              }
+              className={selectCls}
+              aria-label={isNepali ? "स्थिति" : "Status"}
+            >
+              <option value="all">{isNepali ? "सबै स्थिति" : "All status"}</option>
+              <option value="pending">pending</option>
+              <option value="accepted">accepted</option>
+              <option value="rejected">rejected</option>
+              <option value="completed">completed</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+          )}
+        </div>
+      )}
+
+      {tab === "overview" && (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {(
+            [
+              {
+                label: isNepali ? "कुल प्रयोगकर्ता" : "Total users",
+                value: overviewQuery.data?.totalUsers,
+                color: "text-crimson-700",
+              },
+              {
+                label: isNepali ? "कामदार प्रोफाइल" : "Worker profiles",
+                value: overviewQuery.data?.totalWorkers,
+                color: "text-mountain-900",
+              },
+              {
+                label: isNepali ? "उपलब्ध कामदार" : "Available workers",
+                value: overviewQuery.data?.availableWorkers,
+                color: "text-green-700",
+              },
+              {
+                label: isNepali ? "कुल भाडा" : "Total hires",
+                value: overviewQuery.data?.totalHires,
+                color: "text-mountain-900",
+              },
+              {
+                label: isNepali ? "पेन्डिङ भाडा" : "Pending hires",
+                value: overviewQuery.data?.pendingHires,
+                color: "text-amber-600",
+              },
+              {
+                label: isNepali ? "सम्पन्न भाडा" : "Completed hires",
+                value: overviewQuery.data?.completedHires,
+                color: "text-green-700",
+              },
+            ] as const
+          ).map((stat) => (
+            <Card key={stat.label}>
+              <CardContent className="p-4">
+                <p className={`text-2xl font-bold ${stat.color}`}>
+                  {overviewQuery.isLoading ? "…" : (stat.value ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-terrain-500">{stat.label}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
       {tab === "users" && (
         <Card>
           <CardContent className="p-0 overflow-x-auto">
@@ -208,7 +499,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-terrain-100">
-                  {(usersQuery.data ?? []).map((u) => (
+                  {(usersQuery.data?.rows ?? []).map((u) => (
                     <tr key={u.id}>
                       <td className="px-4 py-2 font-medium text-mountain-900">
                         {u.full_name || "—"}
@@ -276,6 +567,7 @@ export default function AdminPage() {
                 </tbody>
               </table>
             )}
+            <Pager tabKey="users" count={usersQuery.data?.count ?? 0} />
           </CardContent>
         </Card>
       )}
@@ -297,7 +589,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-terrain-100">
-                  {(workersQuery.data ?? []).map((w) => (
+                  {(workersQuery.data?.rows ?? []).map((w) => (
                     <tr key={w.id}>
                       <td className="px-4 py-2 font-medium text-mountain-900">
                         {w.users?.full_name || w.user_id.slice(0, 8)}
@@ -340,6 +632,7 @@ export default function AdminPage() {
                 </tbody>
               </table>
             )}
+            <Pager tabKey="workers" count={workersQuery.data?.count ?? 0} />
           </CardContent>
         </Card>
       )}
@@ -360,7 +653,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-terrain-100">
-                  {(hiresQuery.data ?? []).map((h) => (
+                  {(hiresQuery.data?.rows ?? []).map((h) => (
                     <tr key={h.id}>
                       <td className="px-4 py-2 text-terrain-500">
                         {new Date(h.hired_at).toLocaleDateString()}
@@ -391,6 +684,7 @@ export default function AdminPage() {
                 </tbody>
               </table>
             )}
+            <Pager tabKey="hires" count={hiresQuery.data?.count ?? 0} />
           </CardContent>
         </Card>
       )}
