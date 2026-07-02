@@ -81,6 +81,80 @@ function mapSupabaseSession(raw: unknown): AuthSession | null {
 let authListenerBound = false;
 const AUTH_SESSION_TIMEOUT_MS = 4000;
 
+// public.users is the source of truth for role/profile fields. The session's
+// user_metadata can lag behind it (e.g. seeded admins, role switches from
+// another device), which previously made an admin render the hirer dashboard
+// and hid the phone saved via the profile form. After sign-in we fetch the DB
+// row and merge it over the session-derived user.
+let hydratedUserId: string | null = null;
+
+async function fetchDbUser(userId: string): Promise<Partial<User> | null> {
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("users")
+      .select(
+        "phone, full_name, full_name_np, role, is_verified, is_active, avatar_url",
+      )
+      .eq("id", userId)
+      .maybeSingle<{
+        phone: string | null;
+        full_name: string | null;
+        full_name_np: string | null;
+        role: string | null;
+        is_verified: boolean | null;
+        is_active: boolean | null;
+        avatar_url: string | null;
+      }>();
+    if (error || !data) return null;
+
+    const patch: Partial<User> = {};
+    if (
+      data.role === "worker" ||
+      data.role === "hirer" ||
+      data.role === "admin"
+    ) {
+      patch.role = data.role;
+    }
+    if (typeof data.phone === "string" && data.phone.trim()) {
+      patch.phone = data.phone.replace("+977", "");
+    }
+    if (typeof data.full_name === "string" && data.full_name.trim()) {
+      patch.fullName = data.full_name;
+    }
+    if (typeof data.full_name_np === "string" && data.full_name_np.trim()) {
+      patch.fullNameNp = data.full_name_np;
+    }
+    if (typeof data.avatar_url === "string" && data.avatar_url.trim()) {
+      patch.avatarUrl = data.avatar_url;
+    }
+    if (typeof data.is_verified === "boolean") {
+      patch.isVerified = data.is_verified;
+    }
+    if (typeof data.is_active === "boolean") {
+      patch.isActive = data.is_active;
+    }
+    return patch;
+  } catch {
+    return null;
+  }
+}
+
+function hydrateUserFromDb(
+  userId: string,
+  set: (partial: Partial<AuthState>) => void,
+  get: () => AuthState,
+) {
+  if (hydratedUserId === userId) return; // skip repeat TOKEN_REFRESHED events
+  hydratedUserId = userId;
+  void fetchDbUser(userId).then((patch) => {
+    if (!patch) return;
+    const current = get().user;
+    if (!current || current.id !== userId) return; // user changed meanwhile
+    set({ user: { ...current, ...patch } });
+  });
+}
+
 function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -339,6 +413,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       // Attribute Sentry errors to the signed-in user (id only — no PII).
       // No-op when Sentry isn't configured.
       setUserContext(liveSession?.user ? { id: liveSession.user.id } : null);
+      if (liveSession?.user) {
+        hydrateUserFromDb(liveSession.user.id, set, get);
+      }
 
       if (!authListenerBound) {
         authApi.onAuthStateChange((_event, session) => {
@@ -355,6 +432,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           setUserContext(
             nextSession?.user ? { id: nextSession.user.id } : null,
           );
+          if (nextSession?.user) {
+            hydrateUserFromDb(nextSession.user.id, set, get);
+          } else {
+            hydratedUserId = null;
+          }
         });
         authListenerBound = true;
       }
@@ -549,6 +631,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
     // Wipe cached query data so the next user (e.g. after logging in with a
     // different email on a shared device) never sees the previous user's data.
+    hydratedUserId = null;
     try {
       clearQueryCaches();
     } catch (error) {
