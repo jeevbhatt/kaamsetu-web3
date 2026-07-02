@@ -12,9 +12,16 @@ export function useWorkerProfileUpdateMutation() {
       patch: UpdateWorkerProfileInput;
     }) => workerProfilesApi.updateById(input.profileId, input.patch),
     onSuccess: (worker) => {
+      queryClient.setQueryData(
+        queryKeys.workerProfiles.byUser(worker.userId),
+        worker,
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.workers.all });
       queryClient.invalidateQueries({
         queryKey: queryKeys.workers.detail(worker.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workerProfiles.byUser(worker.userId),
       });
     },
   });

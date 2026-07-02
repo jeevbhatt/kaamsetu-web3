@@ -8,6 +8,7 @@ import type { User, AuthSession } from "@shram-sewa/shared";
 import { authApi } from "@shram-sewa/shared";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib";
 import { setUserContext } from "../lib/sentry";
+import { clearQueryCaches } from "../lib/query-client";
 
 type SupabaseSessionLike = {
   access_token?: string;
@@ -231,6 +232,17 @@ async function signUpWithEmailPassword(params: {
   } catch (error) {
     const detail = describeAuthError(error);
     console.error("[auth] Email sign-up failed", detail);
+    if (
+      /already registered|already exists|user_already_exists/i.test(
+        detail.userMessage,
+      )
+    ) {
+      return {
+        kind: "error",
+        message:
+          "This email may already have an account. Sign in or reset your password.",
+      };
+    }
     return { kind: "error", message: detail.userMessage };
   }
 }
@@ -534,5 +546,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       isLoading: false,
       authError: null,
     });
+
+    // Wipe cached query data so the next user (e.g. after logging in with a
+    // different email on a shared device) never sees the previous user's data.
+    try {
+      clearQueryCaches();
+    } catch (error) {
+      console.error("Failed to clear query caches on logout:", error);
+    }
   },
 }));

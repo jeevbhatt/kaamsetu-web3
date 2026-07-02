@@ -8,6 +8,7 @@
  */
 import { useAuthStore } from "../store/auth-store";
 import { getSupabaseSafe } from "../lib/supabase";
+import { getAuthRedirectUrl } from "../lib/auth-redirect";
 
 // Re-export the store hook as useAuth for backwards compatibility
 export function useAuth() {
@@ -54,7 +55,14 @@ export function useAuth() {
   const signUp = async (email: string, password: string, meta?: Record<string, unknown>) => {
     const supabase = getSupabaseSafe();
     if (!supabase) return { success: false, error: "Supabase not available" };
-    const { error } = await supabase.auth.signUp({ email, password, options: { data: meta } });
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: meta,
+        emailRedirectTo: getAuthRedirectUrl("/profile"),
+      },
+    });
     if (error) return { success: false, error: error.message };
     return { success: true };
   };

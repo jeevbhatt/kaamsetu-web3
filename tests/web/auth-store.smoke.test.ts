@@ -124,6 +124,47 @@ describe("web auth store smoke", () => {
     expect(state.user?.isVerified).toBe(true);
   });
 
+  it("forwards the production confirmation redirect during email registration", async () => {
+    const signUpSpy = vi.spyOn(authApi, "signUpWithPassword").mockResolvedValue({
+      session: null,
+    } as never);
+
+    const result = await useAuthStore
+      .getState()
+      .registerWithEmail(
+        "new-user@shramsewa.test",
+        "secret123",
+        "https://shramsewa.jeevanbhatt.com.np/profile",
+      );
+
+    expect(result).toEqual({ kind: "confirm" });
+    expect(signUpSpy).toHaveBeenCalledWith(
+      "new-user@shramsewa.test",
+      "secret123",
+      "https://shramsewa.jeevanbhatt.com.np/profile",
+    );
+  });
+
+  it("turns duplicate email registration errors into a sign-in/reset hint", async () => {
+    vi.spyOn(authApi, "signUpWithPassword").mockRejectedValue(
+      new Error("User already registered"),
+    );
+
+    const result = await useAuthStore
+      .getState()
+      .registerWithEmail(
+        "existing@shramsewa.test",
+        "secret123",
+        "https://shramsewa.jeevanbhatt.com.np/profile",
+      );
+
+    expect(result).toEqual({
+      kind: "error",
+      message:
+        "This email may already have an account. Sign in or reset your password.",
+    });
+  });
+
   it("clears state on logout and calls auth signout", async () => {
     const signOutSpy = vi.spyOn(authApi, "signOut").mockResolvedValue();
 

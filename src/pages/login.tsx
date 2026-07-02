@@ -324,8 +324,8 @@ export default function LoginPage() {
     if (result.kind === "confirm") {
       setInfoMessage(
         isNepali
-          ? "खाता बनाइयो। साइन इन गर्न आफ्नो इमेलमा पठाइएको पुष्टिकरण लिंक क्लिक गर्नुहोस्।"
-          : "Account created. Check your email and click the confirmation link to sign in.",
+          ? "यदि यो नयाँ इमेल हो भने पुष्टिकरण लिंक पठाइएको छ। यदि यो इमेल पहिले नै दर्ता भइसकेको छ भने साइन इन गर्नुहोस् वा पासवर्ड रिसेट गर्नुहोस्।"
+          : "If this is a new email, a confirmation link has been sent. If this email is already registered, sign in or reset your password.",
       );
       return;
     }

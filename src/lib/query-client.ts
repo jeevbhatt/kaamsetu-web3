@@ -94,6 +94,17 @@ export function setupQueryCachePersistence() {
 }
 
 /**
+ * Wipe all cached query data (in-memory + persisted). Call on logout and on
+ * account switch so the next user never sees the previous user's cached data.
+ */
+export function clearQueryCaches() {
+  queryClient.clear();
+  if (canPersistQueryCache()) {
+    window.localStorage.removeItem(QUERY_CACHE_KEY);
+  }
+}
+
+/**
  * Query key factory for type-safe query keys
  */
 export const queryKeys = {
@@ -103,6 +114,10 @@ export const queryKeys = {
     search: (filters: Record<string, unknown>) =>
       ["workers", "search", filters] as const,
     detail: (id: string) => ["workers", "detail", id] as const,
+  },
+  workerProfiles: {
+    all: ["worker-profiles"] as const,
+    byUser: (userId: string) => ["worker-profiles", "by-user", userId] as const,
   },
 
   // Geodata
@@ -135,7 +150,7 @@ export const queryKeys = {
 
   // User
   user: {
-    me: ["user", "me"] as const,
+    me: (id: string) => ["user", "me", id] as const,
     profile: (id: string) => ["user", "profile", id] as const,
   },
 };

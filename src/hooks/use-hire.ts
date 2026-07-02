@@ -65,7 +65,7 @@ export function useMyWorkerProfile(enabled = true) {
   const userId = useAuthStore((state) => state.user?.id);
 
   return useQuery({
-    queryKey: ["worker-profiles", "by-user", userId ?? ""],
+    queryKey: queryKeys.workerProfiles.byUser(userId ?? ""),
     queryFn: () => workersApi.getByUserId(userId!),
     enabled: backendReady && !!userId,
     staleTime: 5 * 60 * 1000,
